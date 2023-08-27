@@ -1,0 +1,77 @@
+{
+  "name": "@storybook/marko-webpack5",
+  "version": "8.0.0",
+  "description": "Storybook for Marko: Develop Marko Component in isolation with Hot Reloading.",
+  "keywords": [
+    "storybook"
+  ],
+  "homepage": "https://github.com/storybookjs/storybook/tree/next/code/frameworks/marko-webpack5",
+  "bugs": {
+    "url": "https://github.com/storybookjs/marko/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/storybookjs/marko.git",
+    "directory": "frameworks/marko-webpack5"
+  },
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/storybook"
+  },
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    },
+    "./preset": {
+      "types": "./dist/preset.d.ts",
+      "require": "./dist/preset.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "template/**/*",
+    "README.md",
+    "*.js",
+    "*.d.ts"
+  ],
+  "scripts": {
+    "build": "tsc -b && node -r esbuild-register build"
+  },
+  "dependencies": {
+    "@storybook/builder-webpack5": "7.2.0-alpha.0",
+    "@storybook/core-common": "7.2.0-alpha.0",
+    "@storybook/marko": "^8.0.0",
+    "@storybook/preset-marko-webpack": "^8.0.0"
+  },
+  "devDependencies": {
+    "marko": "^5.0.0",
+    "typescript": "~4.9.3"
+  },
+  "peerDependencies": {
+    "@babel/core": "*",
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0",
+    "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0",
+    "marko": "^5.0.0"
+  },
+  "engines": {
+    "node": "^14.18 || >=16"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bundler": {
+    "entries": [
+      "./src/index.ts",
+      "./src/preset.ts"
+    ],
+    "platform": "node"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@storybook/marko-webpack5": ["src/index.ts"]
+    }
+  },
+  "include": ["./src/**/*"]
+}

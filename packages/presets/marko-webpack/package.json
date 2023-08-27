@@ -1,0 +1,91 @@
+{
+  "name": "@storybook/preset-marko-webpack",
+  "version": "8.0.0",
+  "description": "Storybook for Marko: Develop Marko Component in isolation with Hot Reloading.",
+  "keywords": [
+    "storybook"
+  ],
+  "homepage": "https://github.com/storybookjs/storybook/tree/next/code/presets/marko-webpack",
+  "bugs": {
+    "url": "https://github.com/storybookjs/marko/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/storybookjs/marko.git",
+    "directory": "presets/marko-webpack"
+  },
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/storybook"
+  },
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    },
+    "./preset": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    },
+    "./dist/framework-preset-marko-docs": {
+      "types": "./dist/framework-preset-marko-docs.d.ts",
+      "require": "./dist/framework-preset-marko-docs.js",
+      "import": "./dist/framework-preset-marko-docs.mjs"
+    },
+    "./dist/framework-preset-marko": {
+      "types": "./dist/framework-preset-marko.d.ts",
+      "require": "./dist/framework-preset-marko.js",
+      "import": "./dist/framework-preset-marko.mjs"
+    },
+    "./dist/marko-docgen-loader": {
+      "types": "./dist/marko-docgen-loader.d.ts",
+      "require": "./dist/marko-docgen-loader.js",
+      "import": "./dist/marko-docgen-loader.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "*.js",
+    "*.d.ts"
+  ],
+  "scripts": {
+    "build": "tsc -b && node -r esbuild-register build"
+  },
+  "dependencies": {
+    "@storybook/core-webpack": "7.2.0-alpha.0",
+    "@storybook/node-logger": "7.2.0-alpha.0"
+  },
+  "devDependencies": {
+    "marko": "^5.0.0",
+    "typescript": "~4.9.3"
+  },
+  "peerDependencies": {
+    "@babel/core": "*",
+    "marko": "^5.0.0"
+  },
+  "engines": {
+    "node": "^14.18 || >=16"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bundler": {
+    "entries": [
+      "./src/index.ts",
+      "./src/framework-preset-marko-docs.ts",
+      "./src/framework-preset-marko.ts",
+      "./src/marko-docgen-loader.ts"
+    ],
+    "platform": "node"
+  }
+}
