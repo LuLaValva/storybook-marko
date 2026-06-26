@@ -1,6 +1,11 @@
 export interface Input extends Omit<Marko.HTML.Input, "type"> {
+  /** Whether the toggle button is currently pressed. */
   pressed: boolean;
   pressedChange(p: boolean): void;
+  /**
+   * The currently selected color swatch.
+   * @default "red"
+   */
   color: string;
   colorChange(t: string): void;
 }
