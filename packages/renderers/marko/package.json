@@ -35,7 +35,7 @@
     "!**/*.tsbuildinfo"
   ],
   "dependencies": {
-    "@marko/language-tools": "^2.5.57"
+    "@marko/type-check": "^3.2.0"
   },
   "peerDependencies": {
     "storybook": "9 - 10"
