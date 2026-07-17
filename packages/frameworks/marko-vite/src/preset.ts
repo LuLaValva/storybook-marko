@@ -19,15 +19,7 @@ export const core: PresetProperty<"core"> = async (config, options) => {
 };
 
 function markoDocgenPlugin(): import("vite").Plugin {
-  let docgen:
-    | Promise<
-        typeof import("@storybook/marko/dist/docgen.js") & {
-          project?: import("@storybook/marko/dist/docgen.js").MarkoDocgen;
-        }
-      >
-    | undefined;
   let warned = false;
-
   return {
     name: "storybook:marko-docgen",
     enforce: "post",
@@ -36,23 +28,11 @@ function markoDocgenPlugin(): import("vite").Plugin {
       if (!fileName.endsWith(".marko") || fileName.includes("node_modules")) {
         return;
       }
-
       try {
-        const mod = await (docgen ??=
-          import("@storybook/marko/dist/docgen.js").then(
-            async (docgenModule) => ({
-              ...docgenModule,
-              project: await docgenModule.createMarkoDocgen({
-                rootDir: process.cwd(),
-              }),
-            }),
-          ));
-        if (!mod.project) return;
-        const withDocgen = mod.attachDocgenInfo(
-          code,
-          mod.project.getDocgenInfo(fileName),
-        );
-        if (withDocgen) return { code: withDocgen, map: null };
+        const { withDocgenInfo } =
+          await import("@storybook/marko/dist/docgen.js");
+        const result = await withDocgenInfo(code, fileName);
+        if (result) return { code: result, map: null };
       } catch (err) {
         if (!warned) {
           warned = true;
