@@ -1,6 +1,7 @@
 import type { Preview } from "@storybook/marko";
 
 export default {
+  tags: ["autodocs"],
   parameters: {
     actions: { argTypesRegex: "^on[A-Z].*" },
     controls: {

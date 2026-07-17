@@ -1,5 +1,7 @@
 export interface Input {
+  /** An optional heading rendered above the list. */
   header?: Marko.AttrTag<Marko.HTML.H1 & { description: string }>;
+  /** The items to render, each with an optional icon. */
   item?: Marko.AttrTag<{
     name: string;
     count: number;

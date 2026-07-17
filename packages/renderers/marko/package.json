@@ -34,6 +34,9 @@
     "preset.js",
     "!**/*.tsbuildinfo"
   ],
+  "dependencies": {
+    "@marko/language-tools": "^2.5.57"
+  },
   "peerDependencies": {
     "storybook": "9 - 10"
   }

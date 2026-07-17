@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { PresetProperty } from "storybook/internal/types";
 
 import type { StorybookConfig } from "./types";
@@ -28,7 +30,14 @@ export const webpackFinal: StorybookConfig["webpackFinal"] = async (
         ...baseConfig.module!.rules!,
         {
           test: /\.marko$/,
-          loader: "@marko/webpack/loader",
+          use: [
+            // Runs on the compiled output of @marko/webpack/loader (loaders
+            // apply right-to-left) to attach docgen info for storybook docs.
+            {
+              loader: path.join(import.meta.dirname, "docgen-loader.js"),
+            },
+            { loader: "@marko/webpack/loader" },
+          ],
         },
       ],
     },
