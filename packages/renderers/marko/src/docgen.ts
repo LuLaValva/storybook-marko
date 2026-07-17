@@ -62,10 +62,11 @@ export async function withDocgenInfo(
 
 async function createDocgenProject(): Promise<Project | undefined> {
   try {
+    // Docgen is opt-in via the optional `@marko/type-check` peer dependency;
+    // when it's missing (or too old to have `createProject`) docs are skipped.
     const { createProject } = await import("@marko/type-check");
     return createProject();
   } catch {
-    // @marko/type-check isn't installed in this project: disable docgen.
     return undefined;
   }
 }

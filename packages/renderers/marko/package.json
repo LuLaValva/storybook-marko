@@ -34,10 +34,16 @@
     "preset.js",
     "!**/*.tsbuildinfo"
   ],
-  "dependencies": {
+  "devDependencies": {
     "@marko/type-check": "^3.2.0"
   },
   "peerDependencies": {
+    "@marko/type-check": "^3.2.0",
     "storybook": "9 - 10"
+  },
+  "peerDependenciesMeta": {
+    "@marko/type-check": {
+      "optional": true
+    }
   }
 }
