@@ -29,7 +29,6 @@ describe("evo-badge", () => {
       await page.getByText("Controls", { exact: true }).click(initialTimeout);
       const panel = page.locator("#storybook-panel-root");
 
-      // Descriptions extracted from the Input JSDoc.
       await expect(
         panel.getByText("Used as the number to be placed in the badge."),
       ).toBeVisible(initialTimeout);
@@ -37,13 +36,19 @@ describe("evo-badge", () => {
       await expect(
         panel.getByText("English default to be overridden"),
       ).toBeVisible();
-
-      // The `<span>` passthrough note written directly in the story argTypes.
       await expect(panel.getByText(/native HTML/)).toBeVisible();
 
-      // Attributes inherited from Marko.HTML.Span are not individually
-      // listed (there are far too many).
+      // `aria-busy` stands in for the Marko.HTML.Span attributes, none of
+      // which are listed individually.
       await expect(panel.getByText("aria-busy")).not.toBeVisible();
+
+      // The native `hidden` attribute's lib JSDoc must not leak into ours.
+      await expect(
+        panel.getByText("Visually hides the badge without removing it."),
+      ).toBeVisible();
+      await expect(
+        panel.getByText(/hidden from rendering|html\.spec\.whatwg\.org/),
+      ).not.toBeVisible();
     });
   });
 });

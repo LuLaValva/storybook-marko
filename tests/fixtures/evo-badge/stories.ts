@@ -5,8 +5,6 @@ import Badge, { type Input } from "./index.marko";
 export default {
   title: "EvoBadge",
   component: Badge,
-  // Descriptions and types come from the JSDoc on the component's Input
-  // type via docgen; only the controls and the passthrough note live here.
   argTypes: {
     number: {
       control: "number",

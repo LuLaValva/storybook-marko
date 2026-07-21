@@ -272,17 +272,36 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         continue;
       }
 
-      let description = ts.displayPartsToString(
-        prop.getDocumentationComment(checker),
-      );
+      // JSDoc comes only from in-project declarations: a prop re-declared
+      // over a native attribute (eg a component's own `size` narrowing
+      // `Marko.HTML.Input`'s) must not inherit the lib declaration's
+      // description or `@see` links, which describe the HTML attribute
+      // rather than the component's prop.
+      let description = "";
       let defaultValue: { value: string } | undefined;
-      for (const tag of prop.getJsDocTags(checker)) {
-        const text = ts.displayPartsToString(tag.text);
-        if (tag.name === "default" || tag.name === "defaultValue") {
-          defaultValue = { value: text };
-        } else {
-          // docs-tools parses remaining tags (eg @deprecated) back out.
-          description += `${description ? "\n" : ""}@${tag.name}${text ? ` ${text}` : ""}`;
+      // Intersections can merge the same declaration into the symbol more
+      // than once; dedupe so its JSDoc isn't repeated.
+      for (const decl of new Set(prop.declarations)) {
+        if (decl.getSourceFile().fileName.includes("/node_modules/")) continue;
+        for (const jsDoc of ts.getJSDocCommentsAndTags(decl)) {
+          if (!ts.isJSDoc(jsDoc)) continue;
+          const text = ts.getTextOfJSDocComment(jsDoc.comment);
+          if (text && !description.includes(text)) {
+            description += `${description ? "\n" : ""}${text}`;
+          }
+        }
+        for (const tag of ts.getJSDocTags(decl)) {
+          const name = tag.tagName.text;
+          const text = ts.getTextOfJSDocComment(tag.comment) ?? "";
+          if (name === "default" || name === "defaultValue") {
+            defaultValue = { value: text };
+          } else {
+            // docs-tools parses remaining tags (eg @deprecated) back out.
+            const tagText = `@${name}${text ? ` ${text}` : ""}`;
+            if (!description.includes(tagText)) {
+              description += `${description ? "\n" : ""}${tagText}`;
+            }
+          }
         }
       }
 
@@ -292,16 +311,48 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         location || fallbackLocation,
       );
       const attrTagType = attrTagMemberType(checker, propType);
+      // Body content declared as `Marko.Body` displays as written instead of
+      // its expanded `Body<[], void>` signature (the checker loses the alias
+      // on instantiated optional members, so read the annotation itself).
+      // Still function-shaped so no control is inferred for it.
+      const declaredText =
+        location && ts.isPropertySignature(location) && location.type
+          ? location.type.getText()
+          : undefined;
+      const bodyType =
+        declaredText && /^(?:global\.)?Marko\.Body\b/.test(declaredText)
+          ? ({
+              name: "signature",
+              type: "function",
+              raw: declaredText,
+            } as const)
+          : undefined;
       props[prop.name] = {
         description,
         required: !(prop.flags & ts.SymbolFlags.Optional),
         // An attr tag's full type is redundant with its extracted members.
-        tsType: attrTagType ? { name: "AttrTag" } : tsTypeOf(checker, propType),
+        tsType: attrTagType
+          ? { name: "AttrTag" }
+          : bodyType || tsTypeOf(checker, propType),
         ...(defaultValue && { defaultValue }),
         ...(attrTagType && {
           "@": docgenProps(checker, attrTagType, location || fallbackLocation),
         }),
       };
+    }
+    // The checker only exposes props common to every member on a union
+    // itself (eg `Input = StaticInput | DayInput`), so props declared by
+    // some members only are merged in afterwards — as optional, since they
+    // may legally be absent.
+    if (type.isUnion()) {
+      for (const member of type.types) {
+        const memberProps = docgenProps(checker, member, fallbackLocation);
+        for (const name in memberProps) {
+          if (!(name in props)) {
+            props[name] = { ...memberProps[name], required: false };
+          }
+        }
+      }
     }
     return props;
   }
