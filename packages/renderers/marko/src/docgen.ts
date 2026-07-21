@@ -279,12 +279,16 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
       // rather than the component's prop.
       let description = "";
       let defaultValue: { value: string } | undefined;
-      for (const decl of prop.declarations || []) {
+      // Intersections can merge the same declaration into the symbol more
+      // than once; dedupe so its JSDoc isn't repeated.
+      for (const decl of new Set(prop.declarations)) {
         if (decl.getSourceFile().fileName.includes("/node_modules/")) continue;
         for (const jsDoc of ts.getJSDocCommentsAndTags(decl)) {
           if (!ts.isJSDoc(jsDoc)) continue;
           const text = ts.getTextOfJSDocComment(jsDoc.comment);
-          if (text) description += `${description ? "\n" : ""}${text}`;
+          if (text && !description.includes(text)) {
+            description += `${description ? "\n" : ""}${text}`;
+          }
         }
         for (const tag of ts.getJSDocTags(decl)) {
           const name = tag.tagName.text;
@@ -293,7 +297,10 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
             defaultValue = { value: text };
           } else {
             // docs-tools parses remaining tags (eg @deprecated) back out.
-            description += `${description ? "\n" : ""}@${name}${text ? ` ${text}` : ""}`;
+            const tagText = `@${name}${text ? ` ${text}` : ""}`;
+            if (!description.includes(tagText)) {
+              description += `${description ? "\n" : ""}${tagText}`;
+            }
           }
         }
       }

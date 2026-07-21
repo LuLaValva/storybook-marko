@@ -44,6 +44,15 @@ describe("evo-badge", () => {
       // Attributes inherited from Marko.HTML.Span are not individually
       // listed (there are far too many).
       await expect(panel.getByText("aria-busy")).not.toBeVisible();
+
+      // A prop re-declared over a native attribute documents only its own
+      // JSDoc — the lib declaration's description and @see must not leak in.
+      await expect(
+        panel.getByText("Visually hides the badge without removing it."),
+      ).toBeVisible();
+      await expect(
+        panel.getByText(/hidden from rendering|html\.spec\.whatwg\.org/),
+      ).not.toBeVisible();
     });
   });
 });
