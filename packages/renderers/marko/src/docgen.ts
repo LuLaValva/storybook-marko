@@ -333,6 +333,20 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         }),
       };
     }
+    // The checker only exposes props common to every member on a union
+    // itself (eg `Input = StaticInput | DayInput`), so props declared by
+    // some members only are merged in afterwards — as optional, since they
+    // may legally be absent.
+    if (type.isUnion()) {
+      for (const member of type.types) {
+        const memberProps = docgenProps(checker, member, fallbackLocation);
+        for (const name in memberProps) {
+          if (!(name in props)) {
+            props[name] = { ...memberProps[name], required: false };
+          }
+        }
+      }
+    }
     return props;
   }
 
