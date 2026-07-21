@@ -14,20 +14,16 @@ export default {
     },
   },
   argTypes: {
+    // Descriptions, types, controls, and default values come from the JSDoc
+    // on the component's Input type via docgen, except count's description
+    // which deliberately differs from its JSDoc to cover that explicitly
+    // written argTypes win over docgen.
     onIncrement: {
-      description: "Event fired each time the internal counter is incremented",
       table: { category: "Events" },
     },
     count: {
-      defaultValue: 0,
-      control: { type: "number" },
       description: "What the initial count of the counter should be",
-      table: {
-        category: "Input",
-        defaultValue: {
-          summary: "0",
-        },
-      },
+      table: { category: "Input" },
     },
   },
 } as Meta<Input>;

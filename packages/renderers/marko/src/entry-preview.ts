@@ -1,12 +1,11 @@
 import { normalizeStory } from "storybook/internal/preview-api";
 import type {
-  Args,
   ArgsEnhancer,
   ArgTypesEnhancer,
   StrictArgTypes,
-  StrictInputType,
 } from "storybook/internal/types";
 
+import { flattenAttrTags } from "./attr-tag";
 import type { MarkoRenderer } from "./types";
 
 export { render, renderToCanvas } from "./render";
@@ -29,54 +28,6 @@ function normalizeArgTypes(
     { id, title },
   );
   return normalized.argTypes ?? argTypes;
-}
-
-function flattenAttrTags(
-  argTypes: StrictArgTypes,
-  args: Args | undefined,
-  prefix = "",
-) {
-  const newArgTypes: StrictArgTypes = {};
-  const newArgs: Args | undefined = args ? {} : undefined;
-
-  for (const key in argTypes) {
-    if (key.startsWith("@")) continue;
-    const argType = argTypes[key];
-    const name = argType.name || key;
-    const table = prefix
-      ? {
-          ...argType.table,
-          category: prefix.substring(0, prefix.length - 3),
-          subcategory: argType.table?.subcategory || argType.table?.category,
-        }
-      : argType.table;
-
-    if (argType["@"]) {
-      newArgTypes[prefix + key] = {
-        ...argType,
-        name: "@" + name,
-        control: { disable: true },
-        table,
-      };
-      newArgs && (newArgs[prefix + key] = null);
-
-      const [otherArgTypes, otherArgs] = flattenAttrTags(
-        argType["@"] as StrictInputType,
-        args?.[key],
-        prefix + "@" + key + " > ",
-      );
-
-      Object.assign(newArgTypes, otherArgTypes);
-      newArgs && Object.assign(newArgs, otherArgs);
-    } else {
-      newArgTypes[prefix + key] = { ...argType, name, table };
-      if (args && key in args) {
-        newArgs![prefix + key] = args[key];
-      }
-    }
-  }
-
-  return [newArgTypes, newArgs] as const;
 }
 
 function addControllableChangeHandlers(argTypes: StrictArgTypes) {

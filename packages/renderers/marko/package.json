@@ -34,7 +34,16 @@
     "preset.js",
     "!**/*.tsbuildinfo"
   ],
+  "dependencies": {
+    "@marko/language-tools": "^2.6.3"
+  },
   "peerDependencies": {
-    "storybook": "9 - 10"
+    "storybook": "9 - 10",
+    "typescript": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   }
 }

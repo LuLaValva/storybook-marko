@@ -18,6 +18,34 @@ export const core: PresetProperty<"core"> = async (config, options) => {
   };
 };
 
+function markoDocgenPlugin(): import("vite").Plugin {
+  let warned = false;
+  return {
+    name: "storybook:marko-docgen",
+    enforce: "post",
+    async transform(code, id) {
+      const [fileName] = id.split("?");
+      if (!fileName.endsWith(".marko") || fileName.includes("node_modules")) {
+        return;
+      }
+      try {
+        const { withDocgenInfo } =
+          await import("@storybook/marko/dist/docgen.js");
+        const result = await withDocgenInfo(code, fileName);
+        if (result) return { code: result, map: null };
+      } catch (err) {
+        if (!warned) {
+          warned = true;
+          console.warn(
+            `[storybook:marko-docgen] failed to extract docs from ${fileName}`,
+            err,
+          );
+        }
+      }
+    },
+  };
+}
+
 export const viteFinal: StorybookConfig["viteFinal"] = async (
   viteConfig,
   storybookConfig,
@@ -37,10 +65,12 @@ export const viteFinal: StorybookConfig["viteFinal"] = async (
       storybookConfig.host && viteConfig.server?.allowedHosts === undefined
         ? { allowedHosts: [storybookConfig.host] }
         : undefined,
-    plugins:
+    plugins: [
       // Ensure @marko/vite included unless already added.
-      (await hasVitePlugins(viteConfig.plugins || [], ["marko-vite:pre"]))
+      ...((await hasVitePlugins(viteConfig.plugins || [], ["marko-vite:pre"]))
         ? []
-        : [(await import("@marko/vite")).default({ linked: false })],
+        : [(await import("@marko/vite")).default({ linked: false })]),
+      markoDocgenPlugin(),
+    ],
   });
 };

@@ -194,6 +194,12 @@ export const Primary: Story<ButtonInput> = {
 };
 ```
 
+### Automatic docs from `Input` types
+
+When `typescript` is installed in your project, Storybook automatically extracts each component's props — JSDoc descriptions, types, required-ness and `@default` values — from its exported `Input` type and merges them into the controls and [autodocs](https://storybook.js.org/docs/writing-docs/autodocs) tables. This includes the members of [attribute tags](https://markojs.com/docs/reference/language#attribute-tags) (`Marko.AttrTag`), which show up nested just like `"@"` argTypes. Anything written explicitly in `argTypes` wins over the extracted docs.
+
+Props inherited from types declared outside your project (eg `Input extends Marko.HTML.Button`) are not listed, and a `fooChange` handler declared alongside `foo` (the [controllable pattern](https://markojs.com/docs/explanation/controllable-components#the-controllable-pattern)) is folded into `foo`'s row instead of appearing as its own. TypeScript is an optional peer dependency: without it, docs extraction is simply skipped.
+
 ## Testing
 
 `@storybook/marko` also ships with tools to make loading and rendering your stories in your tests easy! See our [testing documentation](./testing.md) for more details.
