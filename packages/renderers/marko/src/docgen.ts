@@ -1,15 +1,7 @@
 /**
- * Node-only docgen for Marko components: reads the JSDoc descriptions, types,
- * required-ness and `@default` values of a component's exported `Input` type.
- *
- * The `.marko` source becomes a virtual TypeScript module via
- * `@marko/language-tools` (the same extraction `@marko/type-check` uses) and
- * everything is read back through the TypeScript checker's semantic APIs.
- * Results are shaped like react-docgen `tsType` output so that
- * `storybook/internal/docs-tools` can consume them as `__docgenInfo`.
- *
- * Docs extraction is opt-in via the project's own (optional peer) `typescript`
- * install; without it docgen is silently skipped.
+ * Node-only docgen for Marko components: reads docs from the exported `Input`
+ * type through the TypeScript checker (via the optional `typescript` peer)
+ * into react-docgen shaped `__docgenInfo`.
  */
 import path from "node:path";
 
@@ -47,11 +39,7 @@ const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
 const importTagReg = /^<([^>]+)>$/;
 let shared: Promise<MarkoDocgen | undefined> | undefined;
 
-/**
- * Appends a `__docgenInfo` assignment for `fileName` onto its compiled
- * `code`, lazily sharing one docgen project across all calls. Returns
- * undefined when there is nothing to attach.
- */
+/** Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`. */
 export async function withDocgenInfo(
   code: string,
   fileName: string,
@@ -59,8 +47,7 @@ export async function withDocgenInfo(
   const docgen = await (shared ??= createMarkoDocgen());
   const info = docgen?.getDocgenInfo(fileName);
   if (!info || !Object.keys(info.props).length) return;
-  // Capture the default export (an arbitrary expression in compiled Marko
-  // output) so `__docgenInfo` can be attached to it.
+  // The default export is an arbitrary expression; name it to attach to it.
   const exported = /^export default /m.exec(code);
   if (!exported) return;
   const id = "__MARKO_DOCGEN_DEFAULT__";
@@ -77,7 +64,6 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     ts = ((await import("typescript/lib/tsserverlibrary.js")) as any)
       .default as typeof TS;
   } catch {
-    // TypeScript isn't installed in this project: disable docgen.
     return undefined;
   }
 
@@ -112,7 +98,6 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     compilerOptions,
   );
 
-  // The processor runtime type definitions plus files added by docgen calls.
   const rootNames = new Set<string>();
   for (const ext in processors) {
     for (const rootName of processors[
@@ -136,18 +121,15 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         try {
           extractedCode = processor.extract(fileName, code).toString();
         } catch {
-          // Extraction (eg parse) errors check as an empty file.
+          // Parse errors check as an empty file.
           extractedCode = "";
         }
       }
       return ts.ScriptSnapshot.fromString(extractedCode);
     },
-    // ScriptKind.Unknown falls back to extension based detection.
     getScriptKind: (fileName) =>
       getProcessor(fileName)?.getScriptKind(fileName) ?? ts.ScriptKind.Unknown,
-    // Resolve `<tag>` imports and on-disk paths of processed files; anything
-    // else uses standard bundler resolution. Specifiers that don't resolve
-    // degrade to `any` (which doesn't affect Input docs) instead of failing.
+    // Unresolved specifiers degrade to `any` rather than failing.
     resolveModuleNameLiterals: (
       literals,
       containingFile,
@@ -205,7 +187,6 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
       const elements: DocgenTsType[] = [];
       const boolLiterals: string[] = [];
       for (const member of type.types) {
-        // Optionality is tracked via `required`, not the type.
         if (member.flags & ts.TypeFlags.Undefined) continue;
         if (member.flags & ts.TypeFlags.BooleanLiteral) {
           boolLiterals.push(checker.typeToString(member));
@@ -228,11 +209,9 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     if (type.getCallSignatures().length) {
       return { name: "signature", type: "function", raw };
     }
-    // Long type text is displayed as-is, so truncate the excessive ones.
     return { name: raw.length > 80 ? `${raw.slice(0, 79)}…` : raw };
   }
 
-  /** The nested member type when `type` is a `Marko.AttrTag`. */
   function attrTagMemberType(
     checker: TS.TypeChecker,
     type: TS.Type,
@@ -248,7 +227,6 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     const alias = type.aliasSymbol;
     return alias &&
       type.aliasTypeArguments?.length === 1 &&
-      // Matches `Marko.AttrTag` / `global.Marko.AttrTag`.
       /(?:^|\.)Marko\.AttrTag$/.test(checker.getFullyQualifiedName(alias))
       ? type.aliasTypeArguments[0]
       : undefined;
@@ -261,8 +239,8 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
   ): Record<string, DocgenProp> {
     const props: Record<string, DocgenProp> = {};
     for (const prop of checker.getPropertiesOfType(type)) {
-      // Skip props inherited from types declared outside the project (eg
-      // `Input extends Marko.HTML.Input` pulls in every HTML attribute).
+      // Inherited native attributes (eg `Input extends Marko.HTML.Input`)
+      // are far too many to list.
       if (
         prop.declarations?.length &&
         prop.declarations.every((decl) =>
@@ -272,15 +250,11 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         continue;
       }
 
-      // JSDoc comes only from in-project declarations: a prop re-declared
-      // over a native attribute (eg a component's own `size` narrowing
-      // `Marko.HTML.Input`'s) must not inherit the lib declaration's
-      // description or `@see` links, which describe the HTML attribute
-      // rather than the component's prop.
+      // JSDoc comes only from in-project declarations so re-declared native
+      // attributes don't inherit the lib's docs, deduped since intersections
+      // can repeat a declaration on the symbol.
       let description = "";
       let defaultValue: { value: string } | undefined;
-      // Intersections can merge the same declaration into the symbol more
-      // than once; dedupe so its JSDoc isn't repeated.
       for (const decl of new Set(prop.declarations)) {
         if (decl.getSourceFile().fileName.includes("/node_modules/")) continue;
         for (const jsDoc of ts.getJSDocCommentsAndTags(decl)) {
@@ -311,10 +285,8 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         location || fallbackLocation,
       );
       const attrTagType = attrTagMemberType(checker, propType);
-      // Body content declared as `Marko.Body` displays as written instead of
-      // its expanded `Body<[], void>` signature (the checker loses the alias
-      // on instantiated optional members, so read the annotation itself).
-      // Still function-shaped so no control is inferred for it.
+      // The checker expands `Marko.Body` on optional members, so display the
+      // annotation as written (function-shaped so no control is inferred).
       const declaredText =
         location && ts.isPropertySignature(location) && location.type
           ? location.type.getText()
@@ -330,7 +302,6 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
       props[prop.name] = {
         description,
         required: !(prop.flags & ts.SymbolFlags.Optional),
-        // An attr tag's full type is redundant with its extracted members.
         tsType: attrTagType
           ? { name: "AttrTag" }
           : bodyType || tsTypeOf(checker, propType),
@@ -340,10 +311,8 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         }),
       };
     }
-    // The checker only exposes props common to every member on a union
-    // itself (eg `Input = StaticInput | DayInput`), so props declared by
-    // some members only are merged in afterwards — as optional, since they
-    // may legally be absent.
+    // A union itself only exposes props common to every member; merge
+    // member-only props in as optional.
     if (type.isUnion()) {
       for (const member of type.types) {
         const memberProps = docgenProps(checker, member, fallbackLocation);

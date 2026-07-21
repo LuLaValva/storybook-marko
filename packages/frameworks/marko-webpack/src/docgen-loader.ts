@@ -2,10 +2,6 @@ import type { LoaderContext } from "webpack";
 
 let warned = false;
 
-/**
- * Runs after `@marko/webpack/loader` and appends the component's
- * `__docgenInfo` (extracted from its `Input` type) to the compiled module.
- */
 export default function markoDocgenLoader(
   this: LoaderContext<unknown>,
   source: string,

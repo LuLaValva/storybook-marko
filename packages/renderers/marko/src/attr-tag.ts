@@ -20,10 +20,7 @@ function* attrTagIterator(this: AttrTag) {
   yield* this[rest];
 }
 
-/**
- * Flattens `"@"` nested attribute tag argTypes (and matching args) into
- * `@parent > child` keys with categorized tables.
- */
+/** Flattens `"@"` nested attr tag argTypes (and args) into `@parent > child` keys. */
 export function flattenAttrTags(
   argTypes: StrictArgTypes,
   args: Args | undefined,

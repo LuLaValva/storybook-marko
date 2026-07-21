@@ -23,8 +23,8 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
   for (const { propDef, docgenInfo } of props) {
     const { name, description, type, sbType, defaultValue, jsDocTags } =
       propDef;
-    // A `fooChange` handler alongside `foo` is the controllable pattern
-    // (rendered as part of `foo`'s row), not a row of its own.
+    // `fooChange` alongside `foo` is the controllable pattern, rendered as
+    // part of `foo`'s row.
     if (
       name.endsWith("Change") &&
       (docgenInfo as unknown as DocgenProp).tsType?.type === "function" &&
@@ -32,7 +32,6 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
     ) {
       continue;
     }
-    // Attr tag members extracted by docgen (see the `DocgenProp` type).
     const attrTagProps = (docgenInfo as unknown as DocgenProp)["@"];
     argTypes[name] = {
       name,
@@ -53,8 +52,7 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
 
 const extractArgTypes = (component: unknown): StrictArgTypes | null => {
   if (!hasDocgen(component)) return null;
-  // User argTypes are flattened by the time docgen argTypes are merged in
-  // (`entry-preview` enhancers run first), so flatten these to match.
+  // User argTypes are already flattened when these merge in; match them.
   return flattenAttrTags(argTypesFromDocgen(component), undefined)[0];
 };
 
