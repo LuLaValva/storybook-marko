@@ -12,8 +12,6 @@ export default {
       },
     },
   },
-  // Everything else (descriptions, types, controls) comes from the JSDoc on
-  // the component's Input type via docgen.
   argTypes: {
     item: {
       "@": {

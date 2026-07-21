@@ -90,7 +90,6 @@ describe("attr-tags", () => {
         });
         await sizeRadios.first().waitFor({ state: "visible", timeout: 10000 });
 
-        // Attr tag member docs are extracted from the Input JSDoc via docgen.
         await expect(panel.getByText("The item name.")).toBeVisible();
         await expect(panel.getByText("The size of the icon.")).toBeVisible();
 

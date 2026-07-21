@@ -55,7 +55,6 @@ describe("click-count", () => {
         await page.getByText("Controls", { exact: true }).click(initialTimeout);
         const panel = page.locator("#storybook-panel-root");
 
-        // The story's argTypes description wins over the Input JSDoc.
         await expect(
           panel.getByText("What the initial count of the counter should be"),
         ).toBeVisible(initialTimeout);
@@ -63,8 +62,6 @@ describe("click-count", () => {
           panel.getByText("The initial count for the counter."),
         ).not.toBeVisible();
 
-        // JSDoc fills in where the story defines no description, and the
-        // `@default` tag becomes the default value summary.
         await expect(
           panel.getByText(
             "Fired each time the internal counter is incremented.",
