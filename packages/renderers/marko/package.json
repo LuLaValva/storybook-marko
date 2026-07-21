@@ -34,15 +34,15 @@
     "preset.js",
     "!**/*.tsbuildinfo"
   ],
-  "devDependencies": {
-    "@marko/type-check": "^3.2.0"
+  "dependencies": {
+    "@marko/language-tools": "^2.6.3"
   },
   "peerDependencies": {
-    "@marko/type-check": "^3.2.0",
-    "storybook": "9 - 10"
+    "storybook": "9 - 10",
+    "typescript": ">=5"
   },
   "peerDependenciesMeta": {
-    "@marko/type-check": {
+    "typescript": {
       "optional": true
     }
   }

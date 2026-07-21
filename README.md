@@ -196,13 +196,7 @@ export const Primary: Story<ButtonInput> = {
 
 ### Automatic docs from `Input` types
 
-When [`@marko/type-check`](https://github.com/marko-js/language-server/tree/main/packages/type-check) is installed, Storybook automatically extracts each component's props — JSDoc descriptions, types, required-ness and `@default` values — from its exported `Input` type and merges them into the controls and [autodocs](https://storybook.js.org/docs/writing-docs/autodocs) tables.
-
-```sh
-npm install --save-dev @marko/type-check
-```
-
-It is an optional peer dependency: without it, docs extraction is simply skipped.
+When `typescript` is installed in your project, Storybook automatically extracts each component's props — JSDoc descriptions, types, required-ness and `@default` values — from its exported `Input` type and merges them into the controls and [autodocs](https://storybook.js.org/docs/writing-docs/autodocs) tables. TypeScript is an optional peer dependency: without it, docs extraction is simply skipped.
 
 ## Testing
 
