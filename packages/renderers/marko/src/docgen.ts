@@ -276,13 +276,20 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         prop.getDocumentationComment(checker),
       );
       let defaultValue: { value: string } | undefined;
-      for (const tag of prop.getJsDocTags(checker)) {
-        const text = ts.displayPartsToString(tag.text);
-        if (tag.name === "default" || tag.name === "defaultValue") {
-          defaultValue = { value: text };
-        } else {
-          // docs-tools parses remaining tags (eg @deprecated) back out.
-          description += `${description ? "\n" : ""}@${tag.name}${text ? ` ${text}` : ""}`;
+      // JSDoc tags come only from in-project declarations: a prop overriding
+      // a native attribute (eg `disabled` narrowing `Marko.HTML.Button`'s)
+      // must not inherit the lib declaration's `@see` etc.
+      for (const decl of prop.declarations || []) {
+        if (decl.getSourceFile().fileName.includes("/node_modules/")) continue;
+        for (const tag of ts.getJSDocTags(decl)) {
+          const name = tag.tagName.text;
+          const text = ts.getTextOfJSDocComment(tag.comment) ?? "";
+          if (name === "default" || name === "defaultValue") {
+            defaultValue = { value: text };
+          } else {
+            // docs-tools parses remaining tags (eg @deprecated) back out.
+            description += `${description ? "\n" : ""}@${name}${text ? ` ${text}` : ""}`;
+          }
         }
       }
 
@@ -292,11 +299,29 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         location || fallbackLocation,
       );
       const attrTagType = attrTagMemberType(checker, propType);
+      // Body content declared as `Marko.Body` displays as written instead of
+      // its expanded `Body<[], void>` signature (the checker loses the alias
+      // on instantiated optional members, so read the annotation itself).
+      // Still function-shaped so no control is inferred for it.
+      const declaredText =
+        location && ts.isPropertySignature(location) && location.type
+          ? location.type.getText()
+          : undefined;
+      const bodyType =
+        declaredText && /^(?:global\.)?Marko\.Body\b/.test(declaredText)
+          ? ({
+              name: "signature",
+              type: "function",
+              raw: declaredText,
+            } as const)
+          : undefined;
       props[prop.name] = {
         description,
         required: !(prop.flags & ts.SymbolFlags.Optional),
         // An attr tag's full type is redundant with its extracted members.
-        tsType: attrTagType ? { name: "AttrTag" } : tsTypeOf(checker, propType),
+        tsType: attrTagType
+          ? { name: "AttrTag" }
+          : bodyType || tsTypeOf(checker, propType),
         ...(defaultValue && { defaultValue }),
         ...(attrTagType && {
           "@": docgenProps(checker, attrTagType, location || fallbackLocation),
