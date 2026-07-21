@@ -272,15 +272,20 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
         continue;
       }
 
-      let description = ts.displayPartsToString(
-        prop.getDocumentationComment(checker),
-      );
+      // JSDoc comes only from in-project declarations: a prop re-declared
+      // over a native attribute (eg a component's own `size` narrowing
+      // `Marko.HTML.Input`'s) must not inherit the lib declaration's
+      // description or `@see` links, which describe the HTML attribute
+      // rather than the component's prop.
+      let description = "";
       let defaultValue: { value: string } | undefined;
-      // JSDoc tags come only from in-project declarations: a prop overriding
-      // a native attribute (eg `disabled` narrowing `Marko.HTML.Button`'s)
-      // must not inherit the lib declaration's `@see` etc.
       for (const decl of prop.declarations || []) {
         if (decl.getSourceFile().fileName.includes("/node_modules/")) continue;
+        for (const jsDoc of ts.getJSDocCommentsAndTags(decl)) {
+          if (!ts.isJSDoc(jsDoc)) continue;
+          const text = ts.getTextOfJSDocComment(jsDoc.comment);
+          if (text) description += `${description ? "\n" : ""}${text}`;
+        }
         for (const tag of ts.getJSDocTags(decl)) {
           const name = tag.tagName.text;
           const text = ts.getTextOfJSDocComment(tag.comment) ?? "";
