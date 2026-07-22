@@ -53,6 +53,8 @@ for (const packageDir of [
       splitting: true,
       outExtension: { ".js": ".mjs" },
       packages: "external",
+      // Templates are compiled by the consuming builder, not at package build.
+      external: ["*.marko"],
     }),
   ]);
 }

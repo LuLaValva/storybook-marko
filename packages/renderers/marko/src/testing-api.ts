@@ -24,11 +24,12 @@ export type ComposedStories<Exports> = {
   >;
 };
 
+// Args are merged into the input, so rendering with partial input is fine.
 export type ComposedStory<Export> = ComposedStoryFn<
   MarkoRenderer,
   StoryInputForExport<Export>
 > &
-  Marko.Template<StoryInputForExport<Export>>;
+  Marko.Template<Partial<StoryInputForExport<Export>>>;
 
 /** Function that sets the globalConfig of your storybook. The global config is the preview module of your .storybook folder.
  *

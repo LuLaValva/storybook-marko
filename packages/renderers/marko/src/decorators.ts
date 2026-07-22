@@ -5,6 +5,8 @@ import type {
 } from "storybook/internal/types";
 import { sanitizeStoryContextUpdate } from "storybook/preview-api";
 
+import { wrapWithContentShell } from "./content-shell";
+import { markProcessed } from "./render";
 import type { MarkoRenderer, MarkoStoryResult } from "./types";
 
 export const applyDecorators: DecoratorApplicator<MarkoRenderer, Args> = (
@@ -29,8 +31,21 @@ export const applyDecorators: DecoratorApplicator<MarkoRenderer, Args> = (
 
         const component = decoratedStory.component || context.component;
         if (component && !component.renderSync) {
-          throw new Error(
-            "Decorators are not yet supported in Tags API templates",
+          // Tags API: the shell renders the decorator with the inner story as
+          // its body content (see content-shell.marko).
+          return markProcessed(
+            wrapWithContentShell(
+              "Decorating a Tags API template",
+              component,
+              decoratedStory.input,
+              [
+                {
+                  path: ["content"],
+                  child: story?.component,
+                  childInput: story?.input,
+                },
+              ],
+            ),
           );
         }
         return {

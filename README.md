@@ -142,7 +142,7 @@ export const Secondary = {
 [Storybook `decorators`](https://storybook.js.org/docs/writing-stories/decorators) provide a way to wrap a component with another component to provide context, styling, or additional functionality.
 
 With `@storybook/marko` your decorators _must_ be a function that returns the same signature as the story functions.
-The `component` specified in the decorator will be provided a [`renderBody`](https://markojs.com/docs/syntax/#dynamic-body-content) which can be used to render the nested `Story` or another decorator.
+The `component` specified in the decorator will be provided the nested `Story` (or another decorator) as body content — [`input.renderBody`](https://markojs.com/docs/syntax/#dynamic-body-content) in the class API, [`input.content`](https://markojs.com/docs/reference/language#tag-content) in the Tags API — which it can render with a dynamic tag.
 
 ```js
 import Button from "./button.marko";
@@ -166,6 +166,54 @@ export const Primary = {
     // ...
   },
 };
+```
+
+### Body content controls
+
+Marko components often receive [body content](https://markojs.com/docs/reference/language#tag-content) (`input.content` in the Tags API, `input.renderBody` in the class API). Content values are compiled constructs, so controls cannot edit them directly — instead, mark an arg with `bodyContent` and the string value of that arg is rendered as the component's body content:
+
+```js
+import Alert from "./alert.marko";
+
+export default {
+  title: "Alert",
+  component: Alert,
+  argTypes: {
+    content: {
+      control: "text",
+      // "html" renders the string as raw HTML, "text" (or `true`) escapes it.
+      bodyContent: "html",
+    },
+  },
+};
+
+export const Warning = {
+  args: { content: "Something <b>bad</b> happened!" },
+};
+```
+
+This works for any content arg — `content` itself, other `Marko.Body`-typed args, and [attribute tag](https://markojs.com/docs/reference/language#attribute-tags) content via nested `"@"` argTypes:
+
+```js
+argTypes: {
+  header: {
+    "@": {
+      title: { control: "text" },
+      content: { control: "text", bodyContent: "html" },
+    },
+  },
+},
+```
+
+Both the class API and the Tags API are supported (up to 4 content args per story for Tags API components). Under the hood, Tags API stories are mounted through a small shell template shipped with this package (`content-shell.marko`) that creates each content value with a [`<define>`](https://markojs.com/docs/reference/core-tag#define). This means the builder compiling your stories must also compile `.marko` files imported from `node_modules` (the `@storybook/marko-vite` and `@storybook/marko-webpack` frameworks already do), and it must be Marko 6 or a Marko 5 release recent enough to include the Tags API interop.
+
+When rendering composed stories outside Storybook (e.g. in vitest or jest), register the shell yourself if your Tags API stories use `bodyContent` args or decorators:
+
+```ts
+import { setContentShell } from "@storybook/marko";
+import contentShell from "@storybook/marko/content-shell.marko";
+
+setContentShell(contentShell);
 ```
 
 ### Using with TypeScript

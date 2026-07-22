@@ -1,0 +1,16 @@
+<!-- use tags -->
+export interface Input {
+  name: string;
+  content?: Marko.Body;
+  header?: Marko.AttrTag<{ title?: string; content?: Marko.Body }>;
+}
+<let/count=0/>
+<div>Hello ${input.name}</div>
+<button onClick() { count++ }>count ${count}</button>
+<if=input.header>
+  <header>
+    <h1>${input.header.title}</h1>
+    <${input.header.content}/>
+  </header>
+</if>
+<section><${input.content}/></section>

@@ -1,6 +1,7 @@
 /// <reference types="marko" />
 
 import "./globals";
+export { setContentShell } from "./content-shell";
 export * from "./public-types";
 export * from "./testing-api";
 

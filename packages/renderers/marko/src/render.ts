@@ -4,43 +4,62 @@ import type {
   ArgsStoryFn,
   RenderContext,
   StoryContext,
+  StrictArgTypes,
 } from "storybook/internal/types";
 import { addons } from "storybook/preview-api";
 
 import { attrTag } from "./attr-tag";
-import type { MarkoRenderer } from "./types";
+import { type ContentSlot, wrapWithContentShell } from "./content-shell";
+import type { MarkoRenderer, MarkoStoryResult } from "./types";
 
 type Subscriptions = Record<string, (...args: unknown[]) => void>;
-const instanceByCanvasElement = new WeakMap<
+interface CanvasState {
+  instance: Marko.Component;
+  template: Marko.Template;
+}
+const stateByCanvasElement = new WeakMap<
   MarkoRenderer["canvasElement"],
-  Marko.Component
+  CanvasState
 >();
 const subscriptionsByInstance = new WeakMap<Marko.Component, Subscriptions>();
+const processedResults = new WeakSet<MarkoStoryResult>();
 
 export function renderToCanvas(
   ctx: RenderContext<MarkoRenderer>,
   canvasElement: MarkoRenderer["canvasElement"],
 ) {
   const config = ctx.storyFn();
-  const template = config?.component || ctx.storyContext.component;
-  let instance = instanceByCanvasElement.get(canvasElement);
+  let template = config?.component || ctx.storyContext.component;
+  const state = stateByCanvasElement.get(canvasElement);
+  let instance = state?.instance;
   assertHasTemplate(template, ctx);
 
   if (isTagsAPI(template)) {
-    if (instance && ctx.forceRemount) {
-      instance.destroy();
+    let input = config.input || {};
+    if (!processedResults.has(config)) {
+      input = processInput(input, ctx.storyContext, true);
+      ({ component: template, input } = wrapBodyContent(
+        template,
+        input,
+        ctx.storyContext,
+      ));
+    }
+
+    if (instance && (ctx.forceRemount || state!.template !== template)) {
       instance = undefined;
       cleanup(canvasElement);
     }
 
-    const input = processInput(config.input || {}, ctx.storyContext, true);
     if (instance) {
       (instance as any as Marko.MountedTemplate).update(input);
     } else {
       instance = template.mount(input, canvasElement) as any;
     }
   } else {
-    if (instance && (ctx.forceRemount || !instance.state)) {
+    if (
+      instance &&
+      (ctx.forceRemount || !instance.state || state!.template !== template)
+    ) {
       instance = undefined;
       cleanup(canvasElement);
     }
@@ -80,7 +99,11 @@ export function renderToCanvas(
       }
     } else {
       instance = template
-        .renderSync(processInput(input, ctx.storyContext, false))
+        .renderSync(
+          processedResults.has(config)
+            ? input
+            : processInput(input, ctx.storyContext, false),
+        )
         .replaceChildrenOf(canvasElement)
         .getComponent();
 
@@ -92,7 +115,7 @@ export function renderToCanvas(
     subscriptionsByInstance.set(instance, subscriptions);
   }
 
-  instanceByCanvasElement.set(canvasElement, instance!);
+  stateByCanvasElement.set(canvasElement, { instance: instance!, template });
   ctx.showMain();
 
   return () => cleanup(canvasElement);
@@ -102,8 +125,106 @@ export const render: ArgsStoryFn<MarkoRenderer> = (args, ctx) => {
   const { component } = ctx;
   assertHasTemplate(component, ctx);
 
-  return { component, input: processInput(args, ctx, isTagsAPI(component)) };
+  return markProcessed(
+    wrapBodyContent(
+      component,
+      processInput(args, ctx, isTagsAPI(component)),
+      ctx,
+    ),
+  );
 };
+
+/**
+ * Marks a story result as fully processed so `renderToCanvas` mounts it
+ * as-is instead of running `processInput`/`wrapBodyContent` again.
+ */
+export function markProcessed<T extends MarkoStoryResult>(result: T): T {
+  processedResults.add(result);
+  return result;
+}
+
+/**
+ * Tags API templates receive string `bodyContent` args by mounting the
+ * content shell around the story component, which turns each string into
+ * real compiled body content placed at the arg's path in the input (see
+ * content-shell.marko).
+ */
+export function wrapBodyContent(
+  component: Marko.Template,
+  input: Marko.TemplateInput<Args>,
+  ctx: Pick<StoryContext, "argTypes">,
+): Required<MarkoStoryResult> {
+  if (!isTagsAPI(component)) return { component, input };
+
+  const slots: ContentSlot[] = [];
+  collectContentSlots(ctx.argTypes, input, [], slots);
+  if (!slots.length) return { component, input };
+
+  return wrapWithContentShell(
+    "Passing body content args",
+    component,
+    input,
+    slots,
+  );
+}
+
+function collectContentSlots(
+  argTypes: StrictArgTypes,
+  input: Marko.TemplateInput<Args>,
+  basePath: string[],
+  slots: ContentSlot[],
+) {
+  for (const key in argTypes) {
+    const argType = argTypes[key];
+    if (!argType) continue;
+
+    const path = [...basePath, ...argPath(key, !!argType["@"])];
+    if (argType.bodyContent) {
+      const value = getAtPath(input, path);
+      if (typeof value === "string") {
+        slots.push({
+          path,
+          html: argType.bodyContent === "html" ? value : undefined,
+          text: argType.bodyContent === "html" ? undefined : value,
+        });
+      }
+    }
+
+    // Nested attr tag argTypes (`"@"`) are visited only in their unflattened
+    // form; flattened `@foo > bar` keys already appear at the top level.
+    if (argType["@"] && !key.startsWith("@")) {
+      collectContentSlots(
+        argType["@"] as StrictArgTypes,
+        input,
+        path.slice(0, -1),
+        slots,
+      );
+    }
+  }
+}
+
+/**
+ * Maps an arg key to its input path: `@foo > @bar > baz` becomes
+ * ["foo", "bar", "baz"], and a key naming an attr tag itself maps to that
+ * tag's `content`.
+ */
+function argPath(key: string, isAttrTag: boolean) {
+  const path = [];
+  while (key.startsWith("@")) {
+    const i = key.indexOf(" > ");
+    if (i === -1) return [...path, key.substring(1), "content"];
+    path.push(key.substring(1, i));
+    key = key.substring(i + 3);
+  }
+  path.push(key);
+  if (isAttrTag) path.push("content");
+  return path;
+}
+
+function getAtPath(obj: unknown, path: string[]) {
+  for (const key of path) obj = (obj as Args | undefined)?.[key];
+  return obj;
+}
 
 function isTagsAPI(template: Marko.Template) {
   return !template.renderSync;
@@ -133,13 +254,13 @@ function toEventName(method: string) {
 }
 
 function cleanup(canvasElement: MarkoRenderer["canvasElement"]) {
-  const component = instanceByCanvasElement.get(canvasElement);
-  if (!component) return;
+  const state = stateByCanvasElement.get(canvasElement);
+  if (!state) return;
 
-  component.destroy();
+  state.instance.destroy();
   canvasElement.innerHTML = "";
-  instanceByCanvasElement.delete(canvasElement);
-  subscriptionsByInstance.delete(component);
+  stateByCanvasElement.delete(canvasElement);
+  subscriptionsByInstance.delete(state.instance);
 }
 
 /**
@@ -158,17 +279,17 @@ function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
       path = path.substring(i + 3);
     }
 
-    // Normalize body content
-    if (ctx.argTypes[key]?.bodyContent) {
-      const type = ctx.argTypes[key]?.bodyContent;
-      if (tagsApi) {
-        obj[path] = /* TODO */ args[key];
-      } else {
-        if (type === "html") obj[path] = (out: any) => out.html(args[key]);
-        else obj[path] = (out: any) => out.text(args[key]);
-      }
+    // Body content strings become render-body functions for the class API;
+    // the Tags API turns them into content via the shell in wrapBodyContent.
+    const type = ctx.argTypes[key]?.bodyContent;
+    const val = args[key];
+    if (type && !tagsApi && typeof val === "string") {
+      obj[path] =
+        type === "html"
+          ? (out: any) => out.html(val)
+          : (out: any) => out.text(val);
     } else {
-      obj[path] = args[key];
+      obj[path] = val;
     }
 
     // Add controllable change handlers

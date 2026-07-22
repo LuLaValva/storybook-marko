@@ -1,0 +1,8 @@
+<!-- use tags -->
+export type Input = Record<string, any>;
+<const/[s0, s1, s2, s3]=input.contents/>
+<define/c0>${s0?.text}$!{s0?.html}<${s0?.child} ...s0?.childInput/></define>
+<define/c1>${s1?.text}$!{s1?.html}<${s1?.child} ...s1?.childInput/></define>
+<define/c2>${s2?.text}$!{s2?.html}<${s2?.child} ...s2?.childInput/></define>
+<define/c3>${s3?.text}$!{s3?.html}<${s3?.child} ...s3?.childInput/></define>
+<${input.component} ...input.assemble([c0, c1, c2, c3])/>

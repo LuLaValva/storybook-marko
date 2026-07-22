@@ -44,6 +44,17 @@ describe("split-component", () => {
         );
       });
 
+      test("supports body content controls", async () => {
+        const page = await getPage();
+        const frame = page.frameLocator("#storybook-preview-iframe");
+        await page.getByText("Controls", { exact: true }).click(initialTimeout);
+        await page
+          .getByRole("button", { name: "Set string" })
+          .click(initialTimeout);
+        await page.locator('[name="content"]').fill("some <em>rich</em> body");
+        await expect(frame.locator("em")).toHaveText("rich", initialTimeout);
+      });
+
       test("can navigate to another story", async () => {
         const page = await getPage();
         const frame = page.frameLocator("#storybook-preview-iframe");

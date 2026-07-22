@@ -19,5 +19,3 @@ export const parameters = {
 };
 
 export const argTypesEnhancers: ArgTypesEnhancer[] = [enhanceArgTypes];
-
-export { applyDecorators } from "./decorators";

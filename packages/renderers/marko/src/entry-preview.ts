@@ -7,9 +7,16 @@ import type {
   StrictInputType,
 } from "storybook/internal/types";
 
+import { setContentShell } from "./content-shell";
+import contentShell from "./content-shell.marko";
 import type { MarkoRenderer } from "./types";
 
+export { applyDecorators } from "./decorators";
 export { render, renderToCanvas } from "./render";
+
+// The preview bundle is compiled by a Marko-aware builder, so the content
+// shell template is registered here rather than in the runtime-agnostic API.
+setContentShell(contentShell);
 
 export const parameters = { renderer: "marko" };
 

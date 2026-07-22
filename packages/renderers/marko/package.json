@@ -17,6 +17,7 @@
   "exports": {
     "./package.json": "./package.json",
     "./dist/*": "./dist/*",
+    "./content-shell.marko": "./dist/content-shell.marko",
     "./preset": {
       "types": "./dist/preset.d.ts",
       "import": "./dist/preset.mjs",
