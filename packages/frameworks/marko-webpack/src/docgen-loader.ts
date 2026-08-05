@@ -1,6 +1,6 @@
 import type { LoaderContext } from "webpack";
 
-let warned = false;
+const warned = new Set<string>();
 
 export default function markoDocgenLoader(
   this: LoaderContext<unknown>,
@@ -12,13 +12,13 @@ export default function markoDocgenLoader(
     callback(null, source);
     return;
   }
-  import("@storybook/marko/dist/docgen.js")
+  import("@storybook/marko/docgen")
     .then((docgen) => docgen.withDocgenInfo(source, fileName))
     .then(
       (result) => callback(null, result || source),
       (err) => {
-        if (!warned) {
-          warned = true;
+        if (!warned.has(fileName)) {
+          warned.add(fileName);
           console.warn(
             `[storybook:marko-docgen] failed to extract docs from ${fileName}`,
             err,

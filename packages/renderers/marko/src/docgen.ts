@@ -5,8 +5,9 @@
  */
 import path from "node:path";
 
-import { Processors, Project } from "@marko/language-tools";
 import type TS from "typescript/lib/tsserverlibrary";
+
+type LanguageTools = typeof import("@marko/language-tools");
 
 export interface DocgenTsType {
   name: string;
@@ -60,9 +61,15 @@ export async function withDocgenInfo(
 
 async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
   let ts: typeof TS;
+  let Processors: LanguageTools["Processors"];
+  let Project: LanguageTools["Project"];
   try {
-    ts = ((await import("typescript/lib/tsserverlibrary.js")) as any)
-      .default as typeof TS;
+    [ts, { Processors, Project }] = await Promise.all([
+      import("typescript/lib/tsserverlibrary.js").then(
+        (mod) => (mod as any).default as typeof TS,
+      ),
+      import("@marko/language-tools"),
+    ]);
   } catch {
     return undefined;
   }
@@ -101,7 +108,7 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
   const rootNames = new Set<string>();
   for (const ext in processors) {
     for (const rootName of processors[
-      ext as Processors.ProcessorExtension
+      ext as keyof typeof processors
     ].getRootNames?.() || []) {
       rootNames.add(rootName);
     }

@@ -67,7 +67,12 @@ describe("click-count", () => {
             "Fired each time the internal counter is incremented.",
           ),
         ).toBeVisible();
-        await expect(panel.getByText("0", { exact: true })).toBeVisible();
+        await expect(
+          panel
+            .getByRole("row")
+            .filter({ hasText: "What the initial count of the counter" })
+            .getByText("0", { exact: true }),
+        ).toBeVisible();
       });
 
       test("can navigate to another story", async () => {
