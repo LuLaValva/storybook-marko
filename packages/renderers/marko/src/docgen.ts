@@ -71,8 +71,7 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     return undefined;
   }
 
-  // The factory shipped in @marko/language-tools 2.7; older installs just
-  // don't get docgen, like installs without the typescript peer.
+  // Added in @marko/language-tools 2.7; older installs get no docgen.
   if (!createLanguageService) return undefined;
 
   const dir = ts.sys.getCurrentDirectory();
