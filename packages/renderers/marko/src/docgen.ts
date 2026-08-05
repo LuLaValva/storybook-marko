@@ -36,8 +36,6 @@ interface MarkoDocgen {
   getDocgenInfo(fileName: string): DocgenInfo | undefined;
 }
 
-const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
-const importTagReg = /^<([^>]+)>$/;
 let shared: Promise<MarkoDocgen | undefined> | undefined;
 
 /** Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`. */
@@ -61,10 +59,9 @@ export async function withDocgenInfo(
 
 async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
   let ts: typeof TS;
-  let Processors: LanguageTools["Processors"];
-  let Project: LanguageTools["Project"];
+  let createLanguageService: LanguageTools["createLanguageService"];
   try {
-    [ts, { Processors, Project }] = await Promise.all([
+    [ts, { createLanguageService }] = await Promise.all([
       import("typescript/lib/tsserverlibrary.js").then(
         (mod) => (mod as any).default as typeof TS,
       ),
@@ -74,119 +71,12 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     return undefined;
   }
 
-  const host = ts.sys;
-  const dir = host.getCurrentDirectory();
-  const configFile =
-    ts.findConfigFile(dir, host.fileExists, "tsconfig.json") ||
-    ts.findConfigFile(dir, host.fileExists, "jsconfig.json");
-  const processors = Processors.create({ ts, host, configFile });
-  const getProcessor = (fileName: string) => {
-    const ext = Processors.getProcessorExtension(fileName);
-    return ext ? processors[ext] : undefined;
-  };
+  // The factory shipped in @marko/language-tools 2.7; older installs just
+  // don't get docgen, like installs without the typescript peer.
+  if (!createLanguageService) return undefined;
 
-  const compilerOptions: TS.CompilerOptions = {
-    ...(configFile
-      ? ts.getParsedCommandLineOfConfigFile(configFile, undefined, {
-          ...host,
-          onUnRecoverableConfigFileDiagnostic() {},
-        })?.options
-      : undefined),
-    noEmit: true,
-    allowJs: true,
-    skipLibCheck: true,
-    allowNonTsExtensions: true,
-  };
-  const resolutionCache = ts.createModuleResolutionCache(
-    dir,
-    host.useCaseSensitiveFileNames
-      ? (fileName) => fileName
-      : (fileName) => fileName.toLowerCase(),
-    compilerOptions,
-  );
-
-  const rootNames = new Set<string>();
-  for (const ext in processors) {
-    for (const rootName of processors[
-      ext as keyof typeof processors
-    ].getRootNames?.() || []) {
-      rootNames.add(rootName);
-    }
-  }
-
-  const service = ts.createLanguageService({
-    getCompilationSettings: () => compilerOptions,
-    getScriptFileNames: () => [...rootNames],
-    getScriptVersion: (fileName) =>
-      `${host.getModifiedTime?.(fileName)?.getTime() ?? 0}`,
-    getScriptSnapshot(fileName) {
-      const code = host.readFile(fileName);
-      if (code === undefined) return undefined;
-      const processor = getProcessor(fileName);
-      let extractedCode = code;
-      if (processor) {
-        try {
-          extractedCode = processor.extract(fileName, code).toString();
-        } catch {
-          // Parse errors check as an empty file.
-          extractedCode = "";
-        }
-      }
-      return ts.ScriptSnapshot.fromString(extractedCode);
-    },
-    getScriptKind: (fileName) =>
-      getProcessor(fileName)?.getScriptKind(fileName) ?? ts.ScriptKind.Unknown,
-    // Unresolved specifiers degrade to `any` rather than failing.
-    resolveModuleNameLiterals: (
-      literals,
-      containingFile,
-      redirectedReference,
-    ) =>
-      literals.map(({ text }) => {
-        let moduleName = text;
-        const tagName = importTagReg.exec(moduleName)?.[1];
-        if (tagName) {
-          const tagDef = Project.getTagLookup(
-            path.dirname(containingFile),
-          ).getTag(tagName);
-          moduleName = (tagDef && (tagDef.template || tagDef.renderer)) || text;
-        }
-        const processor = getProcessor(moduleName);
-        if (processor && fsPathReg.test(moduleName)) {
-          const resolvedFileName = path.resolve(
-            containingFile,
-            "..",
-            moduleName,
-          );
-          return {
-            resolvedModule: host.fileExists(resolvedFileName)
-              ? {
-                  resolvedFileName,
-                  extension: processor.getScriptExtension(resolvedFileName),
-                  isExternalLibraryImport: false,
-                }
-              : undefined,
-          };
-        }
-        return ts.bundlerModuleNameResolver(
-          moduleName,
-          containingFile,
-          compilerOptions,
-          host,
-          resolutionCache,
-          redirectedReference,
-        );
-      }),
-    readDirectory: host.readDirectory,
-    readFile: host.readFile,
-    fileExists: host.fileExists,
-    directoryExists: host.directoryExists,
-    getDirectories: host.getDirectories,
-    realpath: host.realpath,
-    getCurrentDirectory: () => dir,
-    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    useCaseSensitiveFileNames: () => host.useCaseSensitiveFileNames,
-  });
+  const dir = ts.sys.getCurrentDirectory();
+  const { service, addRootName } = createLanguageService({ ts });
 
   function tsTypeOf(checker: TS.TypeChecker, type: TS.Type): DocgenTsType {
     const raw = checker.typeToString(type);
@@ -336,7 +226,7 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
   return {
     getDocgenInfo(fileName) {
       fileName = path.resolve(dir, fileName);
-      rootNames.add(fileName);
+      addRootName(fileName);
       const program = service.getProgram();
       const checker = program?.getTypeChecker();
       const sourceFile = program?.getSourceFile(fileName);
