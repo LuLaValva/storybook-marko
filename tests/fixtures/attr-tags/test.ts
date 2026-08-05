@@ -90,6 +90,9 @@ describe("attr-tags", () => {
         });
         await sizeRadios.first().waitFor({ state: "visible", timeout: 10000 });
 
+        await expect(panel.getByText("The item name.")).toBeVisible();
+        await expect(panel.getByText("The size of the icon.")).toBeVisible();
+
         await panel.getByRole("radio", { name: /medium/i }).click();
         await expect(storyButton).toHaveCSS("font-size", "16px");
 

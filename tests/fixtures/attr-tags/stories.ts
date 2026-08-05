@@ -13,38 +13,13 @@ export default {
     },
   },
   argTypes: {
-    header: {
-      description: "An optional header",
-      "@": {
-        description: {
-          type: "string",
-          control: "text",
-          description: "The content of the header",
-        },
-      },
-    },
     item: {
-      description: "Repeatable attribute tag for list items",
       "@": {
-        name: {
-          description: "The item name",
-          control: { type: "text" },
-        },
-        count: {
-          description: "The numerical value of this item",
-          control: "number",
-        },
         icon: {
-          description: "An optional icon",
           "@": {
             size: {
               controllable: true,
-              description: "The size of the icon",
-              options: ["small", "medium", "large"],
               control: { type: "inline-radio" },
-              table: {
-                type: { summary: "string" },
-              },
             },
           },
         },

@@ -49,6 +49,32 @@ describe("click-count", () => {
         await expect($count).toHaveText("Current Count: 2");
       });
 
+      test("docs come from Input JSDoc, explicit argTypes win", async () => {
+        const page = await getPage();
+        await page.goto(`/?path=/story/${Default.id}`);
+        await page.getByText("Controls", { exact: true }).click(initialTimeout);
+        const panel = page.locator("#storybook-panel-root");
+
+        await expect(
+          panel.getByText("What the initial count of the counter should be"),
+        ).toBeVisible(initialTimeout);
+        await expect(
+          panel.getByText("The initial count for the counter."),
+        ).not.toBeVisible();
+
+        await expect(
+          panel.getByText(
+            "Fired each time the internal counter is incremented.",
+          ),
+        ).toBeVisible();
+        await expect(
+          panel
+            .getByRole("row")
+            .filter({ hasText: "What the initial count of the counter" })
+            .getByText("0", { exact: true }),
+        ).toBeVisible();
+      });
+
       test("can navigate to another story", async () => {
         const page = await getPage();
         const frame = page.frameLocator("#storybook-preview-iframe");
