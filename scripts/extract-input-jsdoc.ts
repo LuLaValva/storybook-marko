@@ -10,10 +10,19 @@
  * Input { ... }` becomes a real TS type whose property symbols carry their
  * JSDoc (`symbol.getDocumentationComment`) and tags (`getJsDocTags`).
  */
-import crypto from "node:crypto";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import ts from "typescript/lib/tsserverlibrary.js";
-import { Processors, getExt } from "@marko/language-tools";
+import {
+  Processors,
+  Project,
+  getExt,
+  isDefinitionFile,
+} from "@marko/language-tools";
+
+const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
+const importTagReg = /^<([^>]+)>$/;
+const modulePartsReg = /^((?:@(?:[^/]+)\/)?(?:[^/]+))(.*)$/;
 
 export interface InputProp {
   name: string;
@@ -37,7 +46,16 @@ export function extractInputJsDoc(markoFile: string): InputProp[] {
           path.dirname(configFile),
         ).options
       : {}),
+    // Lets `.marko` files be program root names despite their unknown
+    // extension (mtc sets the same flag in its required compiler options).
+    allowNonTsExtensions: true,
     noEmit: true,
+    // Neutralize emit options inherited from the project tsconfig
+    // (composite/emitDeclarationOnly/incremental conflict with noEmit).
+    composite: false,
+    declaration: false,
+    emitDeclarationOnly: false,
+    incremental: false,
     skipLibCheck: true,
     moduleResolution: ts.ModuleResolutionKind.Bundler,
     module: ts.ModuleKind.ESNext,
@@ -51,94 +69,145 @@ export function extractInputJsDoc(markoFile: string): InputProp[] {
     configFile,
     host,
   });
-  const getProcessor = (fileName: string) => {
+  const getProcessor = (
+    fileName: string,
+  ): (typeof processors)[`.${string}`] | undefined => {
     const ext = getExt(fileName);
-    return ext ? processors[ext as `.${string}`] : undefined;
+    return ext ? processors[ext] : undefined;
   };
-
-  // TS won't accept a `.marko` file as a root name (unknown extension), so we
-  // feed it a virtual `.ts` entry that imports the component; the `.marko`
-  // file then loads via module resolution (overridden below).
-  const entryFile = path.join(path.dirname(abs), `__sb_input_probe__.ts`);
-  const entryCode = `import { Input } from ${JSON.stringify(abs)};\nexport type _ = Input;\n`;
 
   // Run `.marko` files through the marko -> TS extractor.
   const getSourceFile = host.getSourceFile.bind(host);
   host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
-    if (fileName === entryFile) {
-      return ts.createSourceFile(
-        fileName,
-        entryCode,
-        languageVersion,
-        true,
-        ts.ScriptKind.TS,
-      );
-    }
     const processor = getProcessor(fileName);
     if (processor) {
       const code = host.readFile(fileName);
       if (code !== undefined) {
-        const extracted = processor.extract(fileName, code);
-        const extractedCode = extracted.toString();
-        const sf = ts.createSourceFile(
+        return ts.createSourceFile(
           fileName,
-          extractedCode,
+          processor.extract(fileName, code).toString(),
           languageVersion,
           true,
           processor.getScriptKind(fileName),
         );
-        // @ts-expect-error internal version field used by TS
-        sf.version = crypto
-          .createHash("md5")
-          .update(extractedCode)
-          .digest("hex");
-        return sf;
       }
     }
     return getSourceFile(fileName, languageVersion, onError, shouldCreate);
   };
 
   // Teach module resolution to understand `.marko` imports.
-  host.resolveModuleNameLiterals = (
-    literals,
-    containingFile,
-    _redirect,
-    opts,
-  ) =>
+  const moduleResolutionCache = ts.createModuleResolutionCache(
+    host.getCurrentDirectory(),
+    (fileName) => host.getCanonicalFileName(fileName),
+    options,
+  );
+  host.resolveModuleNameLiterals = (literals, containingFile, redirect, opts) =>
     literals.map((literal) => {
-      const text = literal.text;
-      if (text.endsWith(".marko")) {
-        const resolvedFileName = path.resolve(
+      let moduleName = literal.text;
+
+      // `<tag-name>` imports resolve through the Marko taglib.
+      const tagNameMatch = importTagReg.exec(moduleName);
+      if (tagNameMatch) {
+        const tagDef = Project.getTagLookup(
           path.dirname(containingFile),
-          text,
-        );
-        if (host.fileExists(resolvedFileName)) {
-          const processor = getProcessor(resolvedFileName);
-          return {
-            resolvedModule: {
-              resolvedFileName,
-              extension: processor!.getScriptExtension(resolvedFileName),
-              isExternalLibraryImport: false,
-            },
-          };
-        }
+        ).getTag(tagNameMatch[1]);
+        const tagFileName = tagDef && (tagDef.template || tagDef.renderer);
+        if (tagFileName) moduleName = tagFileName;
       }
+
+      const processor = getProcessor(moduleName);
+      if (processor) {
+        let isExternalLibraryImport = false;
+        let resolvedFileName: string | undefined;
+        if (fsPathReg.test(moduleName)) {
+          resolvedFileName = path.resolve(containingFile, "..", moduleName);
+        } else {
+          // Bare package specifier: resolve the package root, then join the
+          // in-package path (e.g. `@marko/runtime-tags/tags/let.d.marko`).
+          const [, nodeModuleName, relativeModulePath] =
+            modulePartsReg.exec(moduleName)!;
+          const { resolvedModule } = ts.nodeModuleNameResolver(
+            `${nodeModuleName}/package.json`,
+            containingFile,
+            opts,
+            host,
+            moduleResolutionCache,
+            redirect,
+          );
+          if (resolvedModule) {
+            isExternalLibraryImport = true;
+            resolvedFileName = path.join(
+              resolvedModule.resolvedFileName,
+              "..",
+              relativeModulePath,
+            );
+          }
+        }
+
+        if (resolvedFileName) {
+          if (isDefinitionFile(resolvedFileName)) {
+            if (!host.fileExists(resolvedFileName)) {
+              resolvedFileName = undefined;
+            }
+          } else {
+            // Prefer a sibling `.d.marko` definition file when present.
+            const ext = getExt(resolvedFileName)!;
+            const definitionFile = `${resolvedFileName.slice(0, -ext.length)}.d${ext}`;
+            if (host.fileExists(definitionFile)) {
+              resolvedFileName = definitionFile;
+            } else if (!host.fileExists(resolvedFileName)) {
+              resolvedFileName = undefined;
+            }
+          }
+        }
+
+        return {
+          resolvedModule: resolvedFileName
+            ? {
+                resolvedFileName,
+                extension: processor.getScriptExtension(resolvedFileName),
+                isExternalLibraryImport,
+              }
+            : undefined,
+        };
+      }
+
       return ts.bundlerModuleNameResolver(
-        text,
+        moduleName,
         containingFile,
         opts,
         host,
-        undefined,
+        moduleResolutionCache,
+        redirect,
       );
     });
 
-  const fileExists = host.fileExists.bind(host);
-  host.fileExists = (f) => f === entryFile || fileExists(f);
+  // Root names: the component itself plus the ambient type roots each
+  // processor contributes (the global `Marko` namespace lives there).
+  const rootNames = [
+    abs,
+    ...Object.values(processors).flatMap(
+      (processor) => processor.getRootNames?.() ?? [],
+    ),
+  ];
 
-  const program = ts.createProgram({ rootNames: [entryFile], options, host });
+  const program = ts.createProgram({ rootNames, options, host });
   const checker = program.getTypeChecker();
   const sourceFile = program.getSourceFile(abs);
   if (!sourceFile) throw new Error(`Could not load ${abs}`);
+
+  // Surface breakage (unresolved imports, missing Marko globals, extractor
+  // bugs) instead of silently reporting an incomplete prop list.
+  const diagnostics = program.getSemanticDiagnostics(sourceFile);
+  if (diagnostics.length) {
+    console.warn(
+      ts.formatDiagnostics(diagnostics, {
+        getCurrentDirectory: () => host.getCurrentDirectory(),
+        getCanonicalFileName: (fileName) => host.getCanonicalFileName(fileName),
+        getNewLine: () => host.getNewLine(),
+      }),
+    );
+  }
 
   const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
   if (!moduleSymbol) throw new Error("No module symbol (is it a module?)");
@@ -150,23 +219,50 @@ export function extractInputJsDoc(markoFile: string): InputProp[] {
 
   const inputType = checker.getDeclaredTypeOfSymbol(inputSymbol);
 
-  return checker.getPropertiesOfType(inputType).map((prop) => ({
-    name: prop.getName(),
-    description: ts.displayPartsToString(prop.getDocumentationComment(checker)),
-    tags: prop.getJsDocTags(checker).map((t) => ({
-      name: t.name,
-      text: ts.displayPartsToString(t.text),
-    })),
-  }));
+  return (
+    checker
+      .getPropertiesOfType(inputType)
+      // Only the component's own attributes — members inherited from library
+      // types (e.g. the hundreds of attributes on `Marko.HTML.Input`) are
+      // not argTypes.
+      .filter((prop) =>
+        prop.declarations?.some((decl) => {
+          const declFile = decl.getSourceFile();
+          return (
+            !program.isSourceFileFromExternalLibrary(declFile) &&
+            !program.isSourceFileDefaultLibrary(declFile)
+          );
+        }),
+      )
+      .map((prop) => ({
+        name: prop.getName(),
+        description: ts.displayPartsToString(
+          prop.getDocumentationComment(checker),
+        ),
+        tags: prop.getJsDocTags(checker).map((t) => ({
+          name: t.name,
+          text: ts.displayPartsToString(t.text),
+        })),
+      }))
+  );
 }
 
-// CLI entry
-const target = process.argv[2];
-if (target) {
+// CLI entry (only when executed directly, not when imported as a module).
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  const target = process.argv[2];
+  if (!target) {
+    console.error(
+      "Usage: node --experimental-strip-types scripts/extract-input-jsdoc.ts <path/to/component.marko>",
+    );
+    process.exit(1);
+  }
   const props = extractInputJsDoc(target);
   for (const p of props) {
     console.log(
-      `• ${p.name}: ${JSON.stringify(p.description) || "(no description)"}`,
+      `• ${p.name}: ${p.description ? JSON.stringify(p.description) : "(no description)"}`,
     );
     for (const tag of p.tags) {
       console.log(`    @${tag.name} ${tag.text}`);

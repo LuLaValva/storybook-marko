@@ -45,25 +45,35 @@ Output:
 
 ```
 • pressed: "Whether the toggle button is currently pressed."
+• pressedChange: (no description)
 • color: "The currently selected color swatch."
     @default "red"
-• colorChange: ""
+• colorChange: (no description)
 ```
 
-It correctly resolves `extends Omit<Marko.HTML.Input, "type">` and reports only
-the component's own documented attributes.
+It correctly resolves `extends Omit<Marko.HTML.Input, "type">` (the inherited
+HTML attributes and their JSDoc are all present on the checked type) and then
+filters the result to the component's own attributes — members declared in
+external library types are not argTypes.
 
 ### Key implementation notes (gotchas already solved)
 
-- TS rejects a `.marko` path as a program **root name** (unknown extension), so
-  the PoC feeds it a virtual `.ts` entry that `import`s the component; the
-  `.marko` then loads through overridden module resolution. `mtc` instead
-  registers `.marko` as an `extraFileExtension` on a parsed config — either
-  works.
+- TS rejects a `.marko` path as a program **root name** (unknown extension)
+  unless `allowNonTsExtensions: true` is set — `mtc` sets the same flag in its
+  required compiler options.
+- The global `Marko` namespace is **not** ambient by default: each processor
+  contributes its type roots via `processor.getRootNames()`, which must be
+  merged into the program's root names (otherwise `Marko.HTML.Input` silently
+  resolves to an error type and inherited attributes vanish).
 - `host.getSourceFile` is overridden to run `processor.extract(file, code)` for
-  `.marko` files (verbatim from `mtc`'s `cli.js`).
-- `host.resolveModuleNameLiterals` maps `*.marko` specifiers to the file with
-  `processor.getScriptExtension(...)`.
+  `.marko` files (as in `mtc`'s `cli.js`).
+- `host.resolveModuleNameLiterals` handles the specifier shapes the extractor
+  emits, ported from `mtc`: relative/absolute `.marko` paths, bare package
+  specifiers (e.g. `@marko/runtime-tags/tags/let.d.marko`), `<tag-name>`
+  taglib imports, and `.d.marko` definition-file preference.
+- `program.getSemanticDiagnostics(sourceFile)` is checked so resolution or
+  extraction failures surface as warnings instead of silently producing an
+  incomplete prop list.
 
 ## Recommended integration
 
@@ -86,10 +96,14 @@ shipped to the client, mirroring how `react-docgen-typescript` injects
    Reuse one long-lived `Program`/`LanguageService` (incremental) rather than a
    fresh program per file — that is the only real performance concern.
 
-2. **New `argTypesEnhancer`** in `entry-preview.ts` — read
-   `component.__markoDocgen.input` and fill in `description` / `table.defaultValue`
-   for each argType, **without overriding** anything the author set manually in
-   `stories.ts`. It should run before `normalizeArgTypes`.
+2. **`docs.extractArgTypes` parameter** in `entry-preview-docs.ts` — that file
+   already registers Storybook's `enhanceArgTypes` (from
+   `storybook/internal/docs-tools`), whose whole job is to call
+   `parameters.docs.extractArgTypes(component)` and merge the result _under_
+   author-specified `argTypes`. Supplying an `extractArgTypes` that reads
+   `component.__markoDocgen.input` gets the "don't override manual argTypes"
+   merge for free and matches how the react/vue/svelte renderers plug docgen
+   in — no hand-written enhancer in `entry-preview.ts` needed.
 
 ### Follow-ups / open questions
 
