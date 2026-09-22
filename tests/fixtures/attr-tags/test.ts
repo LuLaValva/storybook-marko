@@ -90,6 +90,9 @@ describe("attr-tags", () => {
         });
         await sizeRadios.first().waitFor({ state: "visible", timeout: 10000 });
 
+        await expect(
+          panel.getByText("The content of the header."),
+        ).toBeVisible();
         await expect(panel.getByText("The item name.")).toBeVisible();
         await expect(panel.getByText("The size of the icon.")).toBeVisible();
 

@@ -19,7 +19,6 @@ export const core: PresetProperty<"core"> = async (config, options) => {
 };
 
 function markoDocgenPlugin(): import("vite").Plugin {
-  const warned = new Set<string>();
   return {
     name: "storybook:marko-docgen",
     enforce: "post",
@@ -27,22 +26,10 @@ function markoDocgenPlugin(): import("vite").Plugin {
       // `__docgenInfo` is only read in the browser.
       if (options?.ssr) return;
       const [fileName] = id.split("?");
-      if (!fileName.endsWith(".marko") || fileName.includes("node_modules")) {
-        return;
-      }
-      try {
-        const { withDocgenInfo } = await import("@storybook/marko/docgen");
-        const result = await withDocgenInfo(code, fileName);
-        if (result) return { code: result, map: null };
-      } catch (err) {
-        if (!warned.has(fileName)) {
-          warned.add(fileName);
-          console.warn(
-            `[storybook:marko-docgen] failed to extract docs from ${fileName}`,
-            err,
-          );
-        }
-      }
+      if (!fileName.endsWith(".marko")) return;
+      const { withDocgenInfo } = await import("@storybook/marko/docgen");
+      const result = await withDocgenInfo(code, fileName);
+      return result ? { code: result, map: null } : undefined;
     },
   };
 }

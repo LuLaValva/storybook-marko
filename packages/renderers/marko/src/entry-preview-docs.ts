@@ -23,16 +23,18 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
   for (const { propDef, docgenInfo } of props) {
     const { name, description, type, sbType, defaultValue, jsDocTags } =
       propDef;
+    const { tsType, "@": attrTagProps } = docgenInfo as unknown as DocgenProp;
     // `fooChange` alongside `foo` is the controllable pattern, rendered as
     // part of `foo`'s row.
     if (
       name.endsWith("Change") &&
-      (docgenInfo as unknown as DocgenProp).tsType?.type === "function" &&
-      props.some((other) => other.propDef.name === name.slice(0, -6))
+      tsType?.type === "function" &&
+      props.some(
+        (other) => other.propDef.name === name.slice(0, -"Change".length),
+      )
     ) {
       continue;
     }
-    const attrTagProps = (docgenInfo as unknown as DocgenProp)["@"];
     argTypes[name] = {
       name,
       description,

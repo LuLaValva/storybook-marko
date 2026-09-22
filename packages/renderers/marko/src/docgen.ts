@@ -38,25 +38,41 @@ interface MarkoDocgen {
 
 const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
 const importTagReg = /^<([^>]+)>$/;
+const warned = new Set<string>();
 let shared: Promise<MarkoDocgen | undefined> | undefined;
 
-/** Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`. */
+/**
+ * Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`,
+ * or returns undefined when there is nothing to attach. Never throws: docs are
+ * best effort, so a failure warns once per file and leaves `code` alone.
+ */
 export async function withDocgenInfo(
   code: string,
   fileName: string,
 ): Promise<string | undefined> {
-  const docgen = await (shared ??= createMarkoDocgen());
-  const info = docgen?.getDocgenInfo(fileName);
-  if (!info || !Object.keys(info.props).length) return;
-  // The default export is an arbitrary expression; name it to attach to it.
-  const exported = /^export default /m.exec(code);
-  if (!exported) return;
-  const id = "__MARKO_DOCGEN_DEFAULT__";
-  return `${code.slice(0, exported.index)}const ${id} = ${code.slice(
-    exported.index + exported[0].length,
-  )}\n;export default ${id};try { ${id}.__docgenInfo = ${JSON.stringify(
-    info,
-  )}; } catch {}\n`;
+  if (fileName.includes("node_modules")) return;
+  try {
+    const docgen = await (shared ??= createMarkoDocgen());
+    const info = docgen?.getDocgenInfo(fileName);
+    if (!info || !Object.keys(info.props).length) return;
+    // The default export is an arbitrary expression; name it to attach to it.
+    const exported = /^export default /m.exec(code);
+    if (!exported) return;
+    const id = "__MARKO_DOCGEN_DEFAULT__";
+    return `${code.slice(0, exported.index)}const ${id} = ${code.slice(
+      exported.index + exported[0].length,
+    )}\n;export default ${id};try { ${id}.__docgenInfo = ${JSON.stringify(
+      info,
+    )}; } catch {}\n`;
+  } catch (err) {
+    if (!warned.has(fileName)) {
+      warned.add(fileName);
+      console.warn(
+        `[storybook:marko-docgen] failed to extract docs from ${fileName}`,
+        err,
+      );
+    }
+  }
 }
 
 async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
@@ -219,6 +235,9 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
     return { name: raw.length > 80 ? `${raw.slice(0, 79)}…` : raw };
   }
 
+  // `Marko.AttrTag<T>` is `T & { [Symbol.iterator](): Iterator<T> }`. Matching
+  // that shape rather than the alias symbol also covers aliases of it, eg
+  // `export type Header = Marko.AttrTag<{...}>`.
   function attrTagMemberType(
     checker: TS.TypeChecker,
     type: TS.Type,
@@ -231,12 +250,22 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
       }
       return;
     }
-    const alias = type.aliasSymbol;
-    return alias &&
-      type.aliasTypeArguments?.length === 1 &&
-      /(?:^|\.)Marko\.AttrTag$/.test(checker.getFullyQualifiedName(alias))
-      ? type.aliasTypeArguments[0]
-      : undefined;
+    if (!(type.flags & ts.TypeFlags.Intersection)) return;
+    const iterator = checker
+      .getPropertiesOfType(type)
+      .find((prop) => prop.name.startsWith("__@iterator"));
+    const iteration = iterator
+      ?.getDeclarations()
+      ?.map((decl) =>
+        checker
+          .getTypeOfSymbolAtLocation(iterator, decl)
+          .getCallSignatures()[0]
+          ?.getReturnType(),
+      )
+      .find(Boolean);
+    return (
+      iteration && checker.getTypeArguments(iteration as TS.TypeReference)[0]
+    );
   }
 
   function docgenProps(
@@ -246,30 +275,23 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
   ): Record<string, DocgenProp> {
     const props: Record<string, DocgenProp> = {};
     for (const prop of checker.getPropertiesOfType(type)) {
-      // Inherited native attributes (eg `Input extends Marko.HTML.Input`)
-      // are far too many to list.
-      if (
-        prop.declarations?.length &&
-        prop.declarations.every((decl) =>
-          decl.getSourceFile().fileName.includes("/node_modules/"),
-        )
-      ) {
-        continue;
-      }
+      // Docs come only from in-project declarations, so inherited native
+      // attributes (eg `Input extends Marko.HTML.Input`) are dropped rather
+      // than listed in full, and re-declared ones don't pick up the lib's docs.
+      const declarations = new Set(
+        prop.declarations?.filter(
+          (decl) => !decl.getSourceFile().fileName.includes("/node_modules/"),
+        ),
+      );
+      if (prop.declarations?.length && !declarations.size) continue;
 
-      // JSDoc comes only from in-project declarations so re-declared native
-      // attributes don't inherit the lib's docs, deduped since intersections
-      // can repeat a declaration on the symbol.
-      let description = "";
+      const descriptions = new Set<string>();
       let defaultValue: { value: string } | undefined;
-      for (const decl of new Set(prop.declarations)) {
-        if (decl.getSourceFile().fileName.includes("/node_modules/")) continue;
+      for (const decl of declarations) {
         for (const jsDoc of ts.getJSDocCommentsAndTags(decl)) {
           if (!ts.isJSDoc(jsDoc)) continue;
           const text = ts.getTextOfJSDocComment(jsDoc.comment);
-          if (text && !description.includes(text)) {
-            description += `${description ? "\n" : ""}${text}`;
-          }
+          if (text) descriptions.add(text);
         }
         for (const tag of ts.getJSDocTags(decl)) {
           const name = tag.tagName.text;
@@ -278,10 +300,7 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
             defaultValue = { value: text };
           } else {
             // docs-tools parses remaining tags (eg @deprecated) back out.
-            const tagText = `@${name}${text ? ` ${text}` : ""}`;
-            if (!description.includes(tagText)) {
-              description += `${description ? "\n" : ""}${tagText}`;
-            }
+            descriptions.add(`@${name}${text ? ` ${text}` : ""}`);
           }
         }
       }
@@ -307,7 +326,7 @@ async function createMarkoDocgen(): Promise<MarkoDocgen | undefined> {
             } as const)
           : undefined;
       props[prop.name] = {
-        description,
+        description: [...descriptions].join("\n"),
         required: !(prop.flags & ts.SymbolFlags.Optional),
         tsType: attrTagType
           ? { name: "AttrTag" }
