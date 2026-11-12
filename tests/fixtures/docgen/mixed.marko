@@ -1,0 +1,11 @@
+export interface Input {
+  /** Plain text or a heading attribute tag. */
+  title?:
+    | string
+    | Marko.AttrTag<{
+        /** The heading level. */
+        level: number;
+      }>;
+}
+
+<div/>

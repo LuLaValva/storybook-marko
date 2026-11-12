@@ -23,7 +23,11 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
   for (const { propDef, docgenInfo } of props) {
     const { name, description, type, sbType, defaultValue, jsDocTags } =
       propDef;
-    const { tsType, "@": attrTagProps } = docgenInfo as unknown as DocgenProp;
+    const {
+      tsType,
+      rest,
+      "@": attrTagProps,
+    } = docgenInfo as unknown as DocgenProp;
     // `fooChange` alongside `foo` is the controllable pattern, rendered as
     // part of `foo`'s row.
     if (
@@ -44,6 +48,8 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
         jsDocTags,
         defaultValue: defaultValue ?? undefined,
       },
+      // Summarizes inherited attributes, so there is no single value to set.
+      ...(rest && { control: { disable: true } }),
       ...(attrTagProps && {
         "@": argTypesFromDocgen({ __docgenInfo: { props: attrTagProps } }),
       }),

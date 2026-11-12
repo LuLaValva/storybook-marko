@@ -40,7 +40,8 @@
     "!**/*.tsbuildinfo"
   ],
   "dependencies": {
-    "@marko/language-tools": "^2.6.3"
+    "@marko/language-tools": "^2.6.3",
+    "magic-string": "^0.30.21"
   },
   "peerDependencies": {
     "storybook": "9 - 10",

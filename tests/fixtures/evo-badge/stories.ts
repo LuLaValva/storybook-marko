@@ -15,10 +15,6 @@ export default {
     a11yText: {
       control: "text",
     },
-    ["<span> attributes" as any]: {
-      description:
-        "All attributes and event handlers from [the native HTML `<span>` tag](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/span) will be passed through, except `role`.",
-    },
   },
 } satisfies Meta<Input>;
 

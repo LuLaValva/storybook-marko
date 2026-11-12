@@ -29,7 +29,11 @@ function markoDocgenPlugin(): import("vite").Plugin {
       if (!fileName.endsWith(".marko")) return;
       const { withDocgenInfo } = await import("@storybook/marko/docgen");
       const result = await withDocgenInfo(code, fileName);
-      return result ? { code: result, map: null } : undefined;
+      if (!result) return;
+      for (const dependency of result.dependencies) {
+        this.addWatchFile(dependency);
+      }
+      return { code: result.code, map: result.map };
     },
   };
 }
