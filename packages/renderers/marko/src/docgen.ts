@@ -161,13 +161,24 @@ function createMarkoDocgen(
     return ext ? processors[ext] : undefined;
   };
 
+  // Start from every file the config includes, as an editor would, so that
+  // components share one program rather than each rebuilding it.
+  const parsedConfig = configFile
+    ? ts.getParsedCommandLineOfConfigFile(
+        configFile,
+        undefined,
+        { ...host, onUnRecoverableConfigFileDiagnostic() {} },
+        undefined,
+        undefined,
+        Object.keys(processors).map((extension) => ({
+          extension,
+          isMixedContent: false,
+          scriptKind: ts.ScriptKind.Deferred,
+        })),
+      )
+    : undefined;
   const compilerOptions: TS.CompilerOptions = {
-    ...(configFile
-      ? ts.getParsedCommandLineOfConfigFile(configFile, undefined, {
-          ...host,
-          onUnRecoverableConfigFileDiagnostic() {},
-        })?.options
-      : undefined),
+    ...parsedConfig?.options,
     noEmit: true,
     allowJs: true,
     skipLibCheck: true,
@@ -190,7 +201,10 @@ function createMarkoDocgen(
       typeLibNames.add(rootName);
     }
   }
-  const rootNames = new Set(typeLibNames);
+  const rootNames = new Set([
+    ...typeLibNames,
+    ...(parsedConfig?.fileNames || []),
+  ]);
 
   const service = ts.createLanguageService({
     getCompilationSettings: () => compilerOptions,
