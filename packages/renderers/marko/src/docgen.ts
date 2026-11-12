@@ -58,6 +58,7 @@ const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
 const importTagReg = /^<([^>]+)>$/;
 const nodeModulesReg = /[\\/]node_modules[\\/]/;
 const nativeTagReg = /^(?:global\.)?Marko\.HTML\.(\w+)$/;
+const nativeInputReg = /^(?:global\.)?Marko\.Input<\s*["'](\w+)["']\s*>$/;
 const utilityTypeReg = /^(?:Omit|Pick|Partial|Required|Readonly)$/;
 const exportDefaultReg = /^export default /gm;
 const warned = new Set<string>();
@@ -532,21 +533,22 @@ class InputExtractor {
     const { ts, checker } = this;
     const rows: Record<string, DocgenProp> = {};
     const visited = new Set<TS.Node>();
-    const visit = (node: TS.Node): void => {
+    // `omitted` holds the keys an enclosing `Omit<Local, ...>` removes.
+    const visit = (node: TS.Node, omitted: readonly string[]): void => {
       if (visited.has(node)) return;
       visited.add(node);
       if (ts.isInterfaceDeclaration(node)) {
         this.dependencies.add(node.getSourceFile().fileName);
         for (const clause of node.heritageClauses || []) {
-          for (const base of clause.types) visit(base);
+          for (const base of clause.types) visit(base, omitted);
         }
       } else if (ts.isTypeAliasDeclaration(node)) {
         this.dependencies.add(node.getSourceFile().fileName);
-        visit(node.type);
+        visit(node.type, omitted);
       } else if (ts.isIntersectionTypeNode(node)) {
-        for (const member of node.types) visit(member);
+        for (const member of node.types) visit(member, omitted);
       } else if (ts.isParenthesizedTypeNode(node)) {
-        visit(node.type);
+        visit(node.type, omitted);
       } else if (
         ts.isTypeReferenceNode(node) ||
         ts.isExpressionWithTypeArguments(node)
@@ -559,12 +561,30 @@ class InputExtractor {
             ts.isInterfaceDeclaration(decl) ||
             ts.isTypeAliasDeclaration(decl)
           )
-            visit(decl);
+            visit(decl, omitted);
           return;
         }
-        const props = checker.getPropertiesOfType(
-          checker.getTypeAtLocation(node),
-        );
+        const utility = this.utilityOf(node);
+        if (utility) {
+          const [arg, keys] = node.typeArguments!;
+          const argDecl =
+            ts.isTypeReferenceNode(arg) &&
+            this.resolveDeclaration(arg.typeName);
+          // See through utilities on in-project types to what they inherit.
+          if (argDecl && !this.isExternal(argDecl)) {
+            if (utility !== "Pick") {
+              visit(
+                arg,
+                utility === "Omit" && keys
+                  ? [...omitted, ...this.stringLiterals(keys)]
+                  : omitted,
+              );
+            }
+            return;
+          }
+        }
+        const type = checker.getTypeAtLocation(node);
+        const props = checker.getPropertiesOfType(type);
         if (
           !props.length ||
           !props.every((prop) =>
@@ -572,33 +592,51 @@ class InputExtractor {
           )
         )
           return;
-        const [name, row] = this.restRow(node);
+        const [name, row] = this.restRow(
+          node,
+          omitted.filter((key) => checker.getPropertyOfType(type, key)),
+        );
         rows[name] = row;
       }
     };
-    for (const node of nodes) visit(node);
+    for (const node of nodes) visit(node, []);
     return rows;
+  }
+
+  /** The lib utility type (eg `Omit`) a reference applies, if any. */
+  private utilityOf(
+    node: TS.TypeReferenceNode | TS.ExpressionWithTypeArguments,
+  ) {
+    const name = (
+      this.ts.isTypeReferenceNode(node) ? node.typeName : node.expression
+    ).getText();
+    return node.typeArguments?.length && utilityTypeReg.test(name)
+      ? name
+      : undefined;
+  }
+
+  private stringLiterals(node: TS.TypeNode) {
+    const type = this.checker.getTypeAtLocation(node);
+    return (type.isUnion() ? type.types : [type])
+      .filter((t) => t.isStringLiteral())
+      .map((t) => (t as TS.StringLiteralType).value);
   }
 
   private restRow(
     node: TS.TypeReferenceNode | TS.ExpressionWithTypeArguments,
+    omitted: readonly string[],
   ): [string, DocgenProp] {
-    const { ts, checker } = this;
-    const utility = (
-      ts.isTypeReferenceNode(node) ? node.typeName : node.expression
-    ).getText();
+    const utility = this.utilityOf(node);
     const [arg, keys] = node.typeArguments || [];
     // See through the lib's utility types to the type they modify.
-    const typeName =
-      arg && utilityTypeReg.test(utility) ? arg.getText() : utility;
-    let except: string[] = [];
-    if (utility === "Omit" && keys) {
-      const keysType = checker.getTypeAtLocation(keys);
-      except = (keysType.isUnion() ? keysType.types : [keysType])
-        .filter((t) => t.isStringLiteral())
-        .map((t) => (t as TS.StringLiteralType).value);
-    }
-    const nativeTag = nativeTagReg.exec(typeName)?.[1].toLowerCase();
+    const typeName = utility ? arg.getText() : node.getText();
+    const except = [
+      ...omitted,
+      ...(utility === "Omit" && keys ? this.stringLiterals(keys) : []),
+    ];
+    const nativeTag =
+      nativeTagReg.exec(typeName)?.[1].toLowerCase() ||
+      nativeInputReg.exec(typeName)?.[1];
     const exceptText = except.length
       ? `, except ${except.map((key) => `\`${key}\``).join(", ")}`
       : "";

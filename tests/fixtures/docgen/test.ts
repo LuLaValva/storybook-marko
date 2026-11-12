@@ -74,4 +74,16 @@ describe("docgen", () => {
       "Overrides the native title without inheriting its docs.",
     );
   });
+
+  test("sees through Omit of in-project types and Marko.Input", async () => {
+    const { props } = await extract("omit-local.marko");
+    expect(props.base).toBeUndefined();
+    expect(props.shared.description).toBe("Declared in a separate file.");
+    expect(props["...Marko.HTML.Span"].description).toMatch(
+      /, except `hidden`, `title`, `role`, `aria-label`\.$/,
+    );
+    expect(props.label["@"]!['...Marko.Input<"label">'].description).toMatch(
+      /native \[`<label>` tag\]/,
+    );
+  });
 });

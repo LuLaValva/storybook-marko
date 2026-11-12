@@ -1,0 +1,9 @@
+import type { Input as ExtendsInput } from "./extends.marko";
+
+export interface Input
+  extends Omit<ExtendsInput, "base" | "hidden" | "title"> {
+  /** A native-ish tag input. */
+  label?: Marko.AttrTag<Marko.Input<"label">>;
+}
+
+<div/>
