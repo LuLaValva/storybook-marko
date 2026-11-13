@@ -17,7 +17,8 @@ import { flattenAttrTags } from "./attr-tag";
 import type { DocgenProp } from "./docgen";
 import type { MarkoStoryResult } from "./types";
 
-const handlerReg = /^on[A-Z]/;
+/** Marko's own test for an event handler attribute, eg `onClick`, `on-click`. */
+const handlerReg = /^on[-A-Z]/;
 
 export const decorators: Addon_DecoratorFunction<MarkoStoryResult>[] = [];
 
