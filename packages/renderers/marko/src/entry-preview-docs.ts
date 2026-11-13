@@ -38,12 +38,11 @@ const argTypesFromDocgen = (
     const { name, description, sbType, defaultValue, jsDocTags } = propDef;
     if (isChangeHandler(name)) continue;
     const { tsType, rest, "@": attrTagProps } = docgenProps[name];
-    // A Marko 5 component gets dashed attributes camelCased, event handlers
-    // (`on-*`) aside, so its args go by the camelCased name.
-    const key =
-      classApi && !name.startsWith("on-")
-        ? name.replace(/-(\w)/g, (_, char: string) => char.toUpperCase())
-        : name;
+    // A Marko 5 component gets dashed attributes camelCased, so its stories
+    // name args (and event handlers, eg `onSelect`) that way.
+    const key = classApi
+      ? name.replace(/-(\w)/g, (_, char: string) => char.toUpperCase())
+      : name;
     argTypes[key] = {
       name: key,
       ...(isChangeHandler(name + "Change") && { controllable: true }),
