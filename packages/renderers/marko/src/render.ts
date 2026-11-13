@@ -155,7 +155,8 @@ function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
     if (args[key] === undefined) continue;
     let path = key;
     let obj = input;
-    // Attr tag nested attributes have been converted to `@foo > @bar > baz` by `entry-preview.ts`
+    // Attr tag attributes may be flattened to `@foo > @bar > baz` keys by
+    // `flattenAttrTags` (see attr-tag.ts)
     while (path.startsWith("@")) {
       const i = path.indexOf(" > ");
       const name = path.substring(1, i);
