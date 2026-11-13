@@ -21,9 +21,8 @@ function* attrTagIterator(this: AttrTag) {
 }
 
 /**
- * Flattens `"@"` nested attr tag argTypes into `@parent > child` keys, and a
- * single attr tag's args with them. Any other value (eg an array of repeated
- * tags) is left as given.
+ * Flattens `"@"` attr tag argTypes into `@parent > child` keys, along with a
+ * single attr tag's args (others, eg an array of repeated tags, stay as given).
  */
 export function flattenAttrTags(
   argTypes: StrictArgTypes,

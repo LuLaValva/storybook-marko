@@ -80,9 +80,8 @@ const extractArgTypes = (component: unknown): StrictArgTypes | null => {
     // Only a story's own `"@"` argTypes also flatten its args (which custom
     // renders may not expect); docgen's just document the attributes.
     delete argTypes[key]["@"];
-    // Event handlers log to the Actions panel and are grouped in the table.
-    // Attr tags' (keyed `@tag > onFoo`) are left out, as their args would
-    // create the tag.
+    // Skips attr tags' handlers (keyed `@tag > onFoo`): an action arg for one
+    // would create the tag.
     if (handlerReg.test(key) && argTypes[key].type?.name === "function") {
       argTypes[key].action = key;
       argTypes[key].table = { ...argTypes[key].table, category: "Events" };

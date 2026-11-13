@@ -33,8 +33,7 @@ export const webpackFinal: StorybookConfig["webpackFinal"] = async (
         {
           test: /\.marko$/,
           use: [
-            // Runs on the compiled output of @marko/webpack/loader (loaders
-            // apply right-to-left) to attach docgen info for storybook docs.
+            // Loaders apply right-to-left, so this runs on the compiled output.
             ...((await isDocsEnabled(options))
               ? [{ loader: path.join(import.meta.dirname, "docgen-loader.js") }]
               : []),

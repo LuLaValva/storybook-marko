@@ -1,7 +1,6 @@
 /**
- * Node-only docgen for Marko components: reads docs from the exported `Input`
- * type through the TypeScript checker (via the optional `typescript` peer)
- * into react-docgen shaped `__docgenInfo`.
+ * Reads a Marko component's docs from its exported `Input` type, through the
+ * TypeScript checker, into react-docgen shaped `__docgenInfo`.
  */
 import path from "node:path";
 
@@ -35,7 +34,6 @@ export interface DocgenInfo {
 }
 
 export interface DocgenResult {
-  /** `code` with `__docgenInfo` attached; existing positions are unchanged. */
   code: string;
   /** In-project files the docs were read from, to watch for changes. */
   dependencies: string[];
@@ -61,18 +59,13 @@ const warned = new Set<string>();
 const docgens = new Map<string, GetDocgenInfo>();
 let toolsPromise: Promise<Tools | undefined> | undefined;
 
-/** Whether docs are on, so that docgen has a reader. */
 export async function isDocsEnabled(options: Options) {
   return (
     Object.keys(await options.presets.apply("docs", {}, options)).length > 0
   );
 }
 
-/**
- * Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`,
- * or returns undefined when there is nothing to attach. Never throws: docs are
- * best effort, so a failure warns once per file and leaves `code` alone.
- */
+/** Never throws: docs are best effort, so a failure warns once per file. */
 export async function withDocgenInfo(
   code: string,
   fileName: string,
@@ -167,8 +160,8 @@ const configs = new Map<string, ProjectConfig>();
 const missed = new Set<string>();
 
 /**
- * The project including `fileName`: `configFile`'s own, or (as tsserver
- * does for a "solution" config, eg create-vite's) one it references.
+ * `configFile`'s project, or as tsserver does for a solution config (eg
+ * create-vite's), the one it references that includes `fileName`.
  */
 function findProject(
   tools: Tools,
@@ -275,7 +268,6 @@ function createMarkoDocgen(
         try {
           extractedCode = processor.extract(fileName, code).toString();
         } catch {
-          // Parse errors check as an empty file.
           extractedCode = "";
         }
       }
@@ -390,7 +382,6 @@ function createMarkoDocgen(
   };
 }
 
-/** Reads the docs of one `Input` type, tracking the in-project files used. */
 class InputExtractor {
   readonly dependencies = new Set<string>();
   private readonly checker: TS.TypeChecker;
@@ -401,23 +392,18 @@ class InputExtractor {
   constructor(
     private readonly ts: typeof TS,
     private readonly program: TS.Program,
-    /** Marko's own type libraries. */
-    private readonly typeLibFiles: Set<TS.SourceFile>,
+    private readonly markoTypeFiles: Set<TS.SourceFile>,
   ) {
     this.checker = program.getTypeChecker();
     this.printer = ts.createPrinter({ removeComments: true });
   }
 
-  /** The props of `type`. */
   props(type: TS.Type): Record<string, DocgenProp> {
     const { ts, checker } = this;
     const props: Record<string, DocgenProp> = {};
     for (const prop of checker.getPropertiesOfType(type)) {
-      // Docs come only from in-project declarations, so inherited native
-      // attributes (eg `Input extends Marko.HTML.Input`) aren't listed, and
-      // re-declared ones don't pick up the lib's docs. A prop with no
-      // declaration (eg renamed by a mapped type's `as`) has nowhere to be
-      // documented either, so it is skipped.
+      // Only in-project declarations are documented, so inherited native
+      // attributes aren't listed and a re-declared one keeps only its own docs.
       const declarations = new Set(
         prop.declarations?.filter((decl) => !this.isExternal(decl)),
       );
@@ -509,7 +495,7 @@ class InputExtractor {
     if (
       program.isSourceFileDefaultLibrary(sourceFile) ||
       program.isSourceFileFromExternalLibrary(sourceFile) ||
-      this.typeLibFiles.has(sourceFile)
+      this.markoTypeFiles.has(sourceFile)
     ) {
       return true;
     }
@@ -525,7 +511,6 @@ class InputExtractor {
     );
   }
 
-  /** A node's text on one line, as TypeScript prints it, for display. */
   private textOf(node: TS.Node) {
     return this.printer
       .printNode(this.ts.EmitHint.Unspecified, node, node.getSourceFile())
@@ -544,9 +529,8 @@ class InputExtractor {
   }
 
   /**
-   * The `T & {...}` of a `Marko.AttrTag<T>` (also when aliased, or in a
-   * union), recognized by its marker type literal from Marko's own types so
-   * that it works whatever the configured lib.
+   * The `T & {...}` of a `Marko.AttrTag<T>`, found by the marker type literal
+   * in Marko's own types so that it works whatever the configured lib.
    */
   private attrTagType(type: TS.Type): TS.Type | undefined {
     if (type.isUnion()) {
@@ -570,7 +554,6 @@ class InputExtractor {
     return ts.isTypeAliasDeclaration(node) && node.name.text === "AttrTag";
   }
 
-  /** Whether a union holds more than an attr tag (and `undefined`). */
   private isMixedUnion(type: TS.UnionType) {
     return type.types.some(
       (member) =>
@@ -580,8 +563,8 @@ class InputExtractor {
   }
 
   /**
-   * The annotation an in-project indexed access names, eg the declared type
-   * of `seeMore` for `OtherInput["seeMore"]`.
+   * The annotation an in-project indexed access names, eg `seeMore`'s for
+   * `OtherInput["seeMore"]`.
    */
   private indexedTypeNode(node: TS.TypeNode) {
     const { ts, checker } = this;
@@ -647,11 +630,8 @@ class InputExtractor {
   }
 
   /**
-   * The type for controls and display. An annotation that only names types
-   * from outside the project (eg `Marko.Body`) displays as written, since
-   * those names are what readers know. Otherwise it displays as the checker
-   * prints it, which spells out unions (eg an in-project `Size` alias) and
-   * keeps the names of object types.
+   * An annotation naming only external types (eg `Marko.Body`) displays as
+   * written, since readers know those names; others as the checker prints.
    */
   private tsTypeOf(
     type: TS.Type,
@@ -696,9 +676,8 @@ class InputExtractor {
   }
 
   /**
-   * A written union's members in order, following in-project aliases. The
-   * checker orders a union by when each member type was first created
-   * anywhere in the program, which would shuffle eg enum options.
+   * The checker orders a union's members by when each type was created in
+   * the program, which would shuffle eg enum options; this keeps written order.
    */
   private writtenMembers(
     node: TS.TypeNode,
