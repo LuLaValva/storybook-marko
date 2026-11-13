@@ -120,6 +120,7 @@ describe("docgen", () => {
     });
     expect(props.index.tsType.raw).toBe("string | number");
     expect(props.tag.tsType.raw).toBe("keyof Marko.NativeTags");
+    expect(props.slot.tsType.raw).toBe("Marko.Body | Marko.HTML.Span");
     expect(props.mode.tsType.elements!.map((e) => e.name)).toEqual([
       "true",
       "literal",

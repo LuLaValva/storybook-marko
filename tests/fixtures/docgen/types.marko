@@ -21,6 +21,10 @@ export interface Input<Index extends number | string = number> {
     /** The label. */
     label: string;
   }>;
+  /** Written over several lines, as Prettier does. */
+  slot?:
+    | Marko.Body
+    | Marko.HTML.Span;
   /** Only names a type from outside the project. */
   tag?: keyof Marko.NativeTags;
 }

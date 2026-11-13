@@ -77,9 +77,6 @@ const keyPattern = (key: string) =>
       .join(".*")}$`,
   );
 
-/** A node's source text on one line, for display. */
-const textOf = (node: TS.Node) => node.getText().replace(/\s+/g, " ");
-
 /** Whether docs are on, so that docgen has a reader. */
 export async function isDocsEnabled(options: Options) {
   return (
@@ -410,6 +407,7 @@ class InputExtractor {
   private readonly checker: TS.TypeChecker;
   /** Attr tag types being expanded, so recursive ones stop. */
   private readonly expanding = new Set<TS.Type>();
+  private readonly printer: TS.Printer;
 
   constructor(
     private readonly ts: typeof TS,
@@ -418,6 +416,7 @@ class InputExtractor {
     private readonly typeLibFiles: Set<TS.SourceFile>,
   ) {
     this.checker = program.getTypeChecker();
+    this.printer = ts.createPrinter({ removeComments: true });
   }
 
   /**
@@ -533,13 +532,33 @@ class InputExtractor {
     return props;
   }
 
-  isExternal(node: TS.Node) {
+  isExternal(node: TS.Node): boolean {
+    const { ts, program } = this;
     const sourceFile = node.getSourceFile();
-    return (
-      this.program.isSourceFileDefaultLibrary(sourceFile) ||
-      this.program.isSourceFileFromExternalLibrary(sourceFile) ||
+    if (
+      program.isSourceFileDefaultLibrary(sourceFile) ||
+      program.isSourceFileFromExternalLibrary(sourceFile) ||
       this.typeLibFiles.has(sourceFile)
+    ) {
+      return true;
+    }
+    // A member added to an external interface from the project (eg to
+    // `Marko.HTMLAttributes` in a `declare global`) belongs to that interface.
+    const { parent } = node;
+    return (
+      !!parent &&
+      ts.isInterfaceDeclaration(parent) &&
+      !!this.checker
+        .getSymbolAtLocation(parent.name)
+        ?.declarations?.some((decl) => decl !== parent && this.isExternal(decl))
     );
+  }
+
+  /** A node's text on one line, as TypeScript prints it, for display. */
+  private textOf(node: TS.Node) {
+    return this.printer
+      .printNode(this.ts.EmitHint.Unspecified, node, node.getSourceFile())
+      .replace(/\s+/g, " ");
   }
 
   private jsDocComments(decl: TS.Node) {
@@ -800,8 +819,8 @@ class InputExtractor {
     const utility = this.utilityOf(node);
     const [arg, keys] = node.typeArguments || [];
     // See through the lib's utility types to the type they modify.
-    const typeName = textOf(utility ? arg : node);
-    const typeText = textOf(node);
+    const typeName = this.textOf(utility ? arg : node);
+    const typeText = this.textOf(node);
     const except = [
       ...omitted,
       ...(utility === "Omit" && keys ? this.stringLiterals(keys) : []),
@@ -840,12 +859,12 @@ class InputExtractor {
         ? this.writtenMembers(written).map((member) =>
             ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal)
               ? JSON.stringify(member.literal.text)
-              : textOf(member),
+              : this.textOf(member),
           )
         : [],
     );
     return written && this.namesOnlyExternalTypes(written)
-      ? { ...tsType, raw: textOf(written) }
+      ? { ...tsType, raw: this.textOf(written) }
       : tsType;
   }
 
