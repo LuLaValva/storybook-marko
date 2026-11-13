@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { parameters } from "@storybook/marko/dist/entry-preview-docs.mjs";
-import { type DocgenProp, withDocgenInfo } from "@storybook/marko/docgen";
+import {
+  type DocgenProp,
+  isDocgenEnabled,
+  withDocgenInfo,
+} from "@storybook/marko/docgen";
 
 const docgenReg = /__docgenInfo = (.*);$/m;
 
@@ -221,5 +225,18 @@ describe("docgen", () => {
         parameters.docs.extractArgTypes({ __docgenInfo } as any),
       ).not.toThrow();
     }
+  });
+
+  test("is turned off by the framework's docgen option", async () => {
+    const enabled = (framework: unknown) =>
+      isDocgenEnabled({
+        presets: {
+          apply: async (name: string) =>
+            name === "framework" ? framework : { docs: true },
+        },
+      } as any);
+    expect(await enabled("@storybook/marko-vite")).toBe(true);
+    expect(await enabled({ name: "", options: {} })).toBe(true);
+    expect(await enabled({ name: "", options: { docgen: false } })).toBe(false);
   });
 });

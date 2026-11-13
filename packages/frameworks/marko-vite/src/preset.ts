@@ -1,5 +1,5 @@
 import { hasVitePlugins } from "@storybook/builder-vite";
-import { isDocsEnabled, withDocgenInfo } from "@storybook/marko/docgen";
+import { isDocgenEnabled, withDocgenInfo } from "@storybook/marko/docgen";
 import type { PresetProperty } from "storybook/internal/types";
 import type { Plugin } from "vite";
 
@@ -63,7 +63,9 @@ export const viteFinal: StorybookConfig["viteFinal"] = async (
       ...((await hasVitePlugins(viteConfig.plugins || [], ["marko-vite:pre"]))
         ? []
         : [(await import("@marko/vite")).default({ linked: false })]),
-      ...((await isDocsEnabled(storybookConfig)) ? [markoDocgenPlugin()] : []),
+      ...((await isDocgenEnabled(storybookConfig))
+        ? [markoDocgenPlugin()]
+        : []),
     ],
   });
 };

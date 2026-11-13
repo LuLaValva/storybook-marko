@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { isDocsEnabled } from "@storybook/marko/docgen";
+import { isDocgenEnabled } from "@storybook/marko/docgen";
 import type { PresetProperty } from "storybook/internal/types";
 
 import type { StorybookConfig } from "./types";
@@ -34,7 +34,7 @@ export const webpackFinal: StorybookConfig["webpackFinal"] = async (
           test: /\.marko$/,
           use: [
             // Loaders apply right-to-left, so this runs on the compiled output.
-            ...((await isDocsEnabled(options))
+            ...((await isDocgenEnabled(options))
               ? [{ loader: path.join(import.meta.dirname, "docgen-loader.js") }]
               : []),
             { loader: "@marko/webpack/loader" },

@@ -74,6 +74,14 @@ export async function isDocsEnabled(options: Options) {
   );
 }
 
+export async function isDocgenEnabled(options: Options) {
+  const framework = await options.presets.apply("framework", {}, options);
+  return (
+    (typeof framework === "string" || framework.options?.docgen !== false) &&
+    (await isDocsEnabled(options))
+  );
+}
+
 /** Never throws: docs are best effort, so a failure warns once per file. */
 export async function withDocgenInfo(
   code: string,

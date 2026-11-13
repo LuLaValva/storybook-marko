@@ -224,7 +224,14 @@ export interface Input {
 - A `fooChange` handler next to `foo` (the [controllable pattern](https://markojs.com/docs/explanation/controllable-components#the-controllable-pattern)) makes `foo` controllable, as if its argType said `controllable: true`, and shares its row. To opt out, set `controllable: false` and give `fooChange` its own argType if it should still be listed.
 - Props inherited from your own types are listed like the rest. Those from types outside your project (eg `Input extends Marko.HTML.Button`) aren't listed (add an argType to list one), and a prop you re-declare from one shows only your docs.
 
-Anything written in a story's `argTypes` wins over what is extracted, so reach for it only to change what the types can't say, such as a control's look. TypeScript is an optional peer dependency: without it, extraction is skipped.
+Anything written in a story's `argTypes` wins over what is extracted, so reach for it only to change what the types can't say, such as a control's look. TypeScript is an optional peer dependency: without it, extraction is skipped. To turn extraction off, set `docgen: false` in the framework's options:
+
+```ts
+framework: {
+  name: "@storybook/marko-vite",
+  options: { docgen: false },
+},
+```
 
 ## Testing
 
