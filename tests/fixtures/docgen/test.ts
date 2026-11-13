@@ -186,4 +186,17 @@ describe("docgen", () => {
     // Declared differently by each member, so no one annotation describes it.
     expect(props.content.tsType.raw).toMatch(/string/);
   });
+
+  test("watches in-project bases that add no listed prop", async () => {
+    const { dependencies } = await extract("base-file.marko");
+    expect(dependencies).toEqual(["base-types.ts"]);
+  });
+
+  test("keeps the description of an Input with no listed props", async () => {
+    const fileName = path.join(import.meta.dirname, "description-only.marko");
+    const result = await withDocgenInfo("export default {};\n", fileName);
+    const info = JSON.parse(docgenReg.exec(result!.code)![1]);
+    expect(info.description).toBe("A styled button.");
+    expect(info.props).toEqual({});
+  });
 });

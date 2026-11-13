@@ -82,7 +82,12 @@ export async function withDocgenInfo(
   try {
     const tools = await (toolsPromise ??= loadTools());
     const result = tools && getMarkoDocgen(tools, fileName)(fileName);
-    if (!result || !Object.keys(result.info.props).length) return;
+    if (
+      !result ||
+      (!Object.keys(result.info.props).length && !result.info.description)
+    ) {
+      return;
+    }
     const { ts } = tools;
     const sourceFile = ts.createSourceFile(
       fileName,
@@ -361,6 +366,9 @@ function createMarkoDocgen(
         !!symbol?.declarations?.some((decl) => !extractor.isExternal(decl)),
     );
     const props = extractor.props(type);
+    for (const symbol of declared) {
+      for (const decl of symbol.declarations!) extractor.watch(decl);
+    }
     extractor.dependencies.delete(sourceFile.fileName);
     const basename = path.basename(fileName, ".marko");
     return {
@@ -593,6 +601,35 @@ class InputExtractor {
     if (!decl || !ts.isPropertySignature(decl)) return;
     this.dependencies.add(decl.getSourceFile().fileName);
     return decl.type;
+  }
+
+  /**
+   * Adds the files of the in-project types `node` is built from, including
+   * ones that add no listed prop yet (eg `Base extends Marko.HTML.Span`).
+   */
+  watch(node: TS.Node, seen = new Set<TS.Node>()) {
+    const { ts } = this;
+    if (seen.has(node) || this.isExternal(node)) return;
+    seen.add(node);
+    this.dependencies.add(node.getSourceFile().fileName);
+    const visit = (child: TS.Node): void => {
+      if (
+        ts.isTypeReferenceNode(child) ||
+        ts.isExpressionWithTypeArguments(child)
+      ) {
+        const decl = this.resolveDeclaration(
+          ts.isTypeReferenceNode(child) ? child.typeName : child.expression,
+        );
+        if (
+          decl &&
+          (ts.isInterfaceDeclaration(decl) || ts.isTypeAliasDeclaration(decl))
+        ) {
+          this.watch(decl, seen);
+        }
+      }
+      ts.forEachChild(child, visit);
+    };
+    ts.forEachChild(node, visit);
   }
 
   private resolveDeclaration(name: TS.Node) {
