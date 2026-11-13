@@ -216,6 +216,7 @@ export interface Input {
 }
 ```
 
+- A doc comment on `Input` itself becomes the component's description, unless `parameters.docs.description.component` sets one.
 - JSDoc descriptions, `@default` values, types and required-ness fill the table, and a union of literals becomes an option control in the order written.
 - [Attribute tags](https://markojs.com/docs/reference/language#attribute-tags) (`Marko.AttrTag`) list their own members nested beneath them, just like `"@"` argTypes.
 - A Marko 5 (class API) component is documented by the camelCased names its dashed attributes reach it as, eg `"cdn-url"` as `cdnUrl` and `"on-select"` as `onSelect`, so its stories' `argTypes` and `args` use those names too.
