@@ -196,9 +196,32 @@ export const Primary: Story<ButtonInput> = {
 
 ### Automatic docs from `Input` types
 
-When `typescript` is installed in your project, Storybook automatically extracts each component's props — JSDoc descriptions, types, required-ness and `@default` values — from its exported `Input` type and merges them into the controls and [autodocs](https://storybook.js.org/docs/writing-docs/autodocs) tables. This includes the members of [attribute tags](https://markojs.com/docs/reference/language#attribute-tags) (`Marko.AttrTag`), which show up nested just like `"@"` argTypes. Anything written explicitly in `argTypes` wins over the extracted docs.
+When `typescript` is installed in your project, Storybook reads each component's exported `Input` type and fills its controls and [autodocs](https://storybook.js.org/docs/writing-docs/autodocs) table from it, so most stories need no `argTypes` at all:
 
-Props inherited from in-project types are listed like your own. A type declared outside your project (eg `Input extends Marko.HTML.Button`) is summarized by a single `...Marko.HTML.Button` row instead of listing each of its attributes, and a prop you re-declare from one keeps only your own docs unless you write `/** @inheritDoc */` on it. A `fooChange` handler declared alongside `foo` (the [controllable pattern](https://markojs.com/docs/explanation/controllable-components#the-controllable-pattern)) makes `foo` controllable, as if its argType said `controllable: true`, and is folded into `foo`'s row instead of appearing as its own. TypeScript is an optional peer dependency: without it, docs extraction is simply skipped.
+```marko
+export interface Input {
+  /**
+   * The button's visual weight.
+   * @default "secondary"
+   */
+  priority?: "primary" | "secondary" | "tertiary";
+  /** Whether the menu is open. */
+  open?: boolean;
+  openChange?(open: boolean): void;
+  /** The heading shown above the content. */
+  header?: Marko.AttrTag<{
+    /** The heading level. */
+    level?: 2 | 3 | 4;
+  }>;
+}
+```
+
+- JSDoc descriptions, `@default` values, types and required-ness fill the table, and a union of literals becomes an option control in the order written.
+- [Attribute tags](https://markojs.com/docs/reference/language#attribute-tags) (`Marko.AttrTag`) list their own members nested beneath them, just like `"@"` argTypes.
+- A `fooChange` handler next to `foo` (the [controllable pattern](https://markojs.com/docs/explanation/controllable-components#the-controllable-pattern)) makes `foo` controllable, as if its argType said `controllable: true`, and shares its row.
+- Props inherited from your own types are listed like the rest. A type from outside your project (eg `Input extends Marko.HTML.Button`) is summarized by one `...Marko.HTML.Button` row instead of listing every attribute; a prop you re-declare from one keeps only your docs unless you write `/** @inheritDoc */` on it.
+
+Anything written in a story's `argTypes` wins over what is extracted, so reach for it only to change what the types can't say, such as a control's look. TypeScript is an optional peer dependency: without it, extraction is skipped.
 
 ## Testing
 
