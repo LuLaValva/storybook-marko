@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { type DocgenProp, withDocgenInfo } from "@storybook/marko/docgen";
 
-const docgenReg = /__docgenInfo = (.*); } catch/;
+const docgenReg = /__docgenInfo = (.*);$/m;
 
 async function extract(file: string) {
   const fileName = path.join(import.meta.dirname, file);
@@ -95,5 +95,23 @@ describe("docgen", () => {
     expect(props.label["@"]!['...Marko.Input<"label">'].description).toMatch(
       /native \[`<label>` tag\]/,
     );
+  });
+
+  test("displays types as written, with their resolved members", async () => {
+    const { props } = await extract("types.marko");
+    expect(props.content.tsType).toEqual({
+      name: "signature",
+      type: "function",
+      raw: "Marko.Body",
+    });
+    expect(props.size.tsType).toEqual({
+      name: "union",
+      raw: "Size",
+      elements: [
+        { name: "literal", value: '"small"', raw: '"small"' },
+        { name: "literal", value: '"large"', raw: '"large"' },
+      ],
+    });
+    expect(props.flag.tsType).toEqual({ name: "boolean", raw: "boolean" });
   });
 });

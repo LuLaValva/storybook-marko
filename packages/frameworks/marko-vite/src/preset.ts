@@ -23,17 +23,17 @@ function markoDocgenPlugin(): import("vite").Plugin {
     name: "storybook:marko-docgen",
     enforce: "post",
     async transform(code, id, options) {
-      // `__docgenInfo` is only read in the browser.
-      if (options?.ssr) return;
-      const [fileName] = id.split("?");
-      if (!fileName.endsWith(".marko")) return;
+      // `__docgenInfo` is only read in the browser, from the component itself
+      // rather than the `?query` variants @marko/vite also serves.
+      if (options?.ssr || !id.endsWith(".marko")) return;
       const { withDocgenInfo } = await import("@storybook/marko/docgen");
-      const result = await withDocgenInfo(code, fileName);
+      const result = await withDocgenInfo(code, id);
       if (!result) return;
       for (const dependency of result.dependencies) {
         this.addWatchFile(dependency);
       }
-      return { code: result.code, map: result.map };
+      // Positions are unchanged, so the existing source map still applies.
+      return { code: result.code, map: null };
     },
   };
 }

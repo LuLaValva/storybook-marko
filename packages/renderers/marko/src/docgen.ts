@@ -5,8 +5,7 @@
  */
 import path from "node:path";
 
-import MagicString, { type SourceMap } from "magic-string";
-import type TS from "typescript/lib/tsserverlibrary";
+import type TS from "typescript";
 
 type LanguageTools = typeof import("@marko/language-tools");
 
@@ -36,8 +35,8 @@ export interface DocgenInfo {
 }
 
 export interface DocgenResult {
+  /** `code` with `__docgenInfo` attached; existing positions are unchanged. */
   code: string;
-  map: SourceMap;
   /** In-project files the docs were read from, to watch for changes. */
   dependencies: string[];
 }
@@ -57,13 +56,15 @@ interface Tools {
 const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
 const importTagReg = /^<([^>]+)>$/;
 const nodeModulesReg = /[\\/]node_modules[\\/]/;
+// Replaces `export default` with the same length so source maps stay valid.
+const exportDefault = "export default";
+const namedDefault = "const __dg =".padEnd(exportDefault.length);
 const nativeTagReg = /^(?:global\.)?Marko\.HTML\.(\w+)$/;
 const nativeInputReg = /^(?:global\.)?Marko\.Input<\s*["'](\w+)["']\s*>$/;
 const utilityTypeReg = /^(?:Omit|Pick|Partial|Required|Readonly)$/;
-const exportDefaultReg = /^export default /gm;
 const warned = new Set<string>();
 const docgens = new Map<string, MarkoDocgen>();
-let tools: Promise<Tools | undefined> | undefined;
+let toolsPromise: Promise<Tools | undefined> | undefined;
 
 /**
  * Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`,
@@ -74,32 +75,30 @@ export async function withDocgenInfo(
   code: string,
   fileName: string,
 ): Promise<DocgenResult | undefined> {
+  fileName = path.resolve(fileName);
   if (nodeModulesReg.test(fileName)) return;
   try {
-    const docgen = getMarkoDocgen(
-      await (tools ??= loadTools()),
-      path.resolve(fileName),
-    );
-    const result = docgen?.getDocgenInfo(fileName);
+    const tools = await (toolsPromise ??= loadTools());
+    const result =
+      tools && getMarkoDocgen(tools, fileName)?.getDocgenInfo(fileName);
     if (!result || !Object.keys(result.info.props).length) return;
-    // The default export is an arbitrary expression; name it to attach to it.
-    const exported = [...code.matchAll(exportDefaultReg)].pop();
-    if (!exported) return;
-    const id = "__MARKO_DOCGEN_DEFAULT__";
-    const s = new MagicString(code);
-    s.overwrite(
-      exported.index,
-      exported.index + exported[0].length,
-      `const ${id} = `,
+    const { ts } = tools;
+    const sourceFile = ts.createSourceFile(
+      fileName,
+      code,
+      ts.ScriptTarget.Latest,
     );
-    s.append(
-      `\n;export default ${id};try { ${id}.__docgenInfo = ${JSON.stringify(
-        result.info,
-      )}; } catch {}\n`,
-    );
+    const start = sourceFile.statements
+      .find(
+        (statement) =>
+          ts.isExportAssignment(statement) && !statement.isExportEquals,
+      )
+      ?.getStart(sourceFile);
+    if (start === undefined || !code.startsWith(exportDefault, start)) return;
     return {
-      code: s.toString(),
-      map: s.generateMap({ hires: true, source: fileName }),
+      code: `${code.slice(0, start)}${namedDefault}${code.slice(
+        start + exportDefault.length,
+      )}\nexport default __dg;\n__dg.__docgenInfo = ${JSON.stringify(result.info)};\n`,
       dependencies: [...result.dependencies],
     };
   } catch (err) {
@@ -115,10 +114,8 @@ export async function withDocgenInfo(
 
 async function loadTools(): Promise<Tools | undefined> {
   try {
-    const [ts, { Processors, Project }] = await Promise.all([
-      import("typescript/lib/tsserverlibrary.js").then(
-        (mod) => (mod as any).default as typeof TS,
-      ),
+    const [{ default: ts }, { Processors, Project }] = await Promise.all([
+      import("typescript"),
       import("@marko/language-tools"),
     ]);
     return { ts, Processors, Project };
@@ -128,8 +125,7 @@ async function loadTools(): Promise<Tools | undefined> {
 }
 
 /** One docgen per tsconfig, found from the component like an editor would. */
-function getMarkoDocgen(tools: Tools | undefined, fileName: string) {
-  if (!tools) return;
+function getMarkoDocgen(tools: Tools, fileName: string) {
   const { ts } = tools;
   const host = ts.sys;
   const fileDir = path.dirname(fileName);
@@ -389,20 +385,9 @@ class InputExtractor {
         location || fallbackLocation,
       );
       const attrTagType = this.attrTagType(propType);
-      // The checker expands `Marko.Body` on optional members, so display the
-      // annotation as written (function-shaped so no control is inferred).
       const declaredType =
         location && ts.isPropertySignature(location)
           ? location.type
-          : undefined;
-      const declaredText = declaredType?.getText();
-      const bodyType =
-        declaredText && /^(?:global\.)?Marko\.Body\b/.test(declaredText)
-          ? ({
-              name: "signature",
-              type: "function",
-              raw: declaredText,
-            } as const)
           : undefined;
       let nested: Record<string, DocgenProp> | undefined;
       if (attrTagType && !this.expanding.has(attrTagType)) {
@@ -421,7 +406,7 @@ class InputExtractor {
         tsType:
           attrTagType && !(propType.isUnion() && this.isMixedUnion(propType))
             ? { name: "AttrTag" }
-            : bodyType || this.tsTypeOf(propType),
+            : this.tsTypeOf(propType, declaredType),
         ...(defaultValue && { defaultValue }),
         ...(attrTagType && { "@": nested || {} }),
       };
@@ -447,8 +432,7 @@ class InputExtractor {
     return (
       this.program.isSourceFileDefaultLibrary(sourceFile) ||
       this.program.isSourceFileFromExternalLibrary(sourceFile) ||
-      this.typeLibNames.has(sourceFile.fileName) ||
-      nodeModulesReg.test(sourceFile.fileName)
+      this.typeLibNames.has(sourceFile.fileName)
     );
   }
 
@@ -676,41 +660,54 @@ class InputExtractor {
     ];
   }
 
-  private tsTypeOf(type: TS.Type): DocgenTsType {
+  /**
+   * The type for controls, displayed (`raw`) as written where there is an
+   * annotation, like react-docgen does, else as the checker prints it.
+   */
+  private tsTypeOf(type: TS.Type, written?: TS.TypeNode): DocgenTsType {
+    const tsType = this.convert(type);
+    return {
+      ...tsType,
+      raw: written?.getText().replace(/\s+/g, " ") ?? tsType.raw,
+    };
+  }
+
+  private convert(type: TS.Type): DocgenTsType & { raw: string } {
     const { ts, checker } = this;
-    // Optionality shows separately, so `undefined` is left out of unions.
-    const raw = checker
-      .typeToString(type)
-      .replace(/^undefined \| | \| undefined(?= \||$)/g, "");
     if (type.isUnion()) {
-      const elements: DocgenTsType[] = [];
+      const elements: (DocgenTsType & { raw: string })[] = [];
       const boolLiterals: string[] = [];
       for (const member of type.types) {
         if (member.flags & ts.TypeFlags.Undefined) continue;
         if (member.flags & ts.TypeFlags.BooleanLiteral) {
           boolLiterals.push(checker.typeToString(member));
         } else {
-          elements.push(this.tsTypeOf(member));
+          elements.push(this.convert(member));
         }
       }
       // The checker expands `boolean` to `true | false`; fold it back.
-      if (boolLiterals.length === 2) elements.push({ name: "boolean" });
-      else
-        for (const value of boolLiterals)
-          elements.push({ name: "literal", value });
+      if (boolLiterals.length === 2) {
+        elements.push({ name: "boolean", raw: "boolean" });
+      } else {
+        for (const value of boolLiterals) {
+          elements.push({ name: "literal", value, raw: value });
+        }
+      }
       if (elements.length === 1) return elements[0];
+      const raw = elements.map((element) => element.raw).join(" | ");
       // Eg a handler typed differently by each member of a union `Input`.
       if (elements.every((element) => element.type === "function")) {
         return { name: "signature", type: "function", raw };
       }
       return { name: "union", raw, elements };
     }
+    const raw = checker.typeToString(type);
     if (type.isStringLiteral() || type.isNumberLiteral()) {
-      return { name: "literal", value: raw };
+      return { name: "literal", value: raw, raw };
     }
     if (type.getCallSignatures().length) {
       return { name: "signature", type: "function", raw };
     }
-    return { name: raw.length > 80 ? `${raw.slice(0, 79)}…` : raw };
+    return { name: raw, raw };
   }
 }
