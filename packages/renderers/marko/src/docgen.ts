@@ -439,15 +439,14 @@ class InputExtractor {
       }
 
       const location = own || prop.valueDeclaration || prop.declarations![0];
+      const declaredType = ts.isPropertySignature(location)
+        ? location.type
+        : undefined;
       const propType =
-        own && ts.isPropertySignature(own) && own.type
-          ? checker.getTypeFromTypeNode(own.type)
+        own && declaredType
+          ? checker.getTypeFromTypeNode(declaredType)
           : checker.getTypeOfSymbolAtLocation(prop, location);
       const attrTagType = this.attrTagType(propType);
-      const declaredType =
-        location && ts.isPropertySignature(location)
-          ? location.type
-          : undefined;
       let nested: Record<string, DocgenProp> | undefined;
       if (attrTagType && !this.expanding.has(attrTagType)) {
         this.expanding.add(attrTagType);
