@@ -674,7 +674,10 @@ class InputExtractor {
 
   private tsTypeOf(type: TS.Type): DocgenTsType {
     const { ts, checker } = this;
-    const raw = checker.typeToString(type);
+    // Optionality shows separately, so `undefined` is left out of unions.
+    const raw = checker
+      .typeToString(type)
+      .replace(/^undefined \| | \| undefined(?= \||$)/g, "");
     if (type.isUnion()) {
       const elements: DocgenTsType[] = [];
       const boolLiterals: string[] = [];
