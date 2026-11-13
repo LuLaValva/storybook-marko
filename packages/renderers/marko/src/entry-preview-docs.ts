@@ -1,8 +1,10 @@
 import {
+  createSummaryValue,
   enhanceArgTypes,
   extractComponentDescription,
   extractComponentSectionObject,
   hasDocgen,
+  isTooLongForTypeSummary,
   SourceType,
 } from "storybook/internal/docs-tools";
 import type {
@@ -40,9 +42,12 @@ const argTypesFromDocgen = (
       ...(isChangeHandler(name + "Change") && { controllable: true }),
       description,
       type: { required: propDef.required, ...sbType },
-      // docs-tools summarizes eg unions as just "union"; show the type.
       table: {
-        type: { summary: tsType.raw },
+        // docs-tools summarizes eg a union as just "union"; show the type,
+        // with a long one shortened the way docs-tools does.
+        type: isTooLongForTypeSummary(tsType.raw)
+          ? createSummaryValue(tsType.name, tsType.raw)
+          : createSummaryValue(tsType.raw),
         jsDocTags,
         defaultValue: defaultValue ?? undefined,
       },

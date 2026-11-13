@@ -662,25 +662,48 @@ class InputExtractor {
   }
 
   /**
-   * The type for controls, displayed (`raw`) as written where there is an
-   * annotation, like react-docgen does, else as the checker prints it.
+   * The type for controls and display. An annotation that only names types
+   * from outside the project (eg `Marko.Body`) displays as written, since
+   * those names are what readers know; in-project names display resolved.
    */
   private tsTypeOf(type: TS.Type, written?: TS.TypeNode): DocgenTsType {
     const tsType = this.convert(type);
-    return {
-      ...tsType,
-      raw: written?.getText().replace(/\s+/g, " ") ?? tsType.raw,
+    return written && this.namesOnlyExternalTypes(written)
+      ? { ...tsType, raw: written.getText().replace(/\s+/g, " ") }
+      : tsType;
+  }
+
+  private namesOnlyExternalTypes(node: TS.TypeNode) {
+    const { ts } = this;
+    let named = false;
+    let external = true;
+    const visit = (child: TS.Node): void => {
+      if (ts.isTypeReferenceNode(child)) {
+        const decl = this.resolveDeclaration(child.typeName);
+        named = true;
+        external &&= !!decl && this.isExternal(decl);
+      }
+      ts.forEachChild(child, visit);
     };
+    visit(node);
+    return named && external;
   }
 
   private convert(type: TS.Type): DocgenTsType {
     const { ts, checker } = this;
+    // A generic `Input`'s parameters are documented by their constraints.
+    if (type.isTypeParameter()) {
+      type = checker.getBaseConstraintOfType(type) || checker.getUnknownType();
+    }
     if (type.isUnion()) {
       const elements: DocgenTsType[] = [];
       const boolLiterals: string[] = [];
+      let nullable = false;
       for (const member of type.types) {
         if (member.flags & ts.TypeFlags.Undefined) continue;
-        if (member.flags & ts.TypeFlags.BooleanLiteral) {
+        if (member.flags & ts.TypeFlags.Null) {
+          nullable = true;
+        } else if (member.flags & ts.TypeFlags.BooleanLiteral) {
           boolLiterals.push(checker.typeToString(member));
         } else {
           elements.push(this.convert(member));
@@ -694,8 +717,11 @@ class InputExtractor {
           elements.push({ name: "literal", value, raw: value });
         }
       }
-      if (elements.length === 1) return elements[0];
-      const raw = elements.map((element) => element.raw).join(" | ");
+      // `null` shows in the type but, like `undefined`, not in the control.
+      const raw = [...elements.map((element) => element.raw)]
+        .concat(nullable ? ["null"] : [])
+        .join(" | ");
+      if (elements.length === 1) return { ...elements[0], raw };
       // Eg a handler typed differently by each member of a union `Input`.
       if (elements.every((element) => element.type === "function")) {
         return { name: "signature", type: "function", raw };

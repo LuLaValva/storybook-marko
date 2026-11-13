@@ -24,7 +24,7 @@ describe("docgen", () => {
     const { props } = await extract("tree.marko");
     const nested = props.item["@"]!;
     expect(nested.label.description).toBe("The item's label.");
-    expect(nested.item.tsType).toEqual({ name: "AttrTag" });
+    expect(nested.item.tsType).toEqual({ name: "AttrTag", raw: "AttrTag" });
     expect(nested.item["@"]).toEqual({});
   });
 
@@ -97,7 +97,7 @@ describe("docgen", () => {
     );
   });
 
-  test("displays types as written, with their resolved members", async () => {
+  test("resolves in-project types, showing external names as written", async () => {
     const { props } = await extract("types.marko");
     expect(props.content.tsType).toEqual({
       name: "signature",
@@ -106,12 +106,18 @@ describe("docgen", () => {
     });
     expect(props.size.tsType).toEqual({
       name: "union",
-      raw: "Size",
+      raw: '"small" | "large"',
       elements: [
         { name: "literal", value: '"small"', raw: '"small"' },
         { name: "literal", value: '"large"', raw: '"large"' },
       ],
     });
     expect(props.flag.tsType).toEqual({ name: "boolean", raw: "boolean" });
+    expect(props.label.tsType).toEqual({
+      name: "string",
+      raw: "string | null",
+    });
+    expect(props.index.tsType.raw).toBe("string | number");
+    expect(props.tag.tsType.raw).toBe("keyof Marko.NativeTags");
   });
 });

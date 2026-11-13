@@ -1,12 +1,18 @@
 export type Size = "small" | "large";
 
-export interface Input {
+export interface Input<Index extends number | string = number> {
   /** Body content. */
   content?: Marko.Body;
   /** An aliased union. */
   size?: Size;
   /** A boolean. */
   flag?: boolean;
+  /** Nullable text. */
+  label: string | null;
+  /** Typed by a parameter. */
+  index?: Index;
+  /** Only names a type from outside the project. */
+  tag?: keyof Marko.NativeTags;
 }
 
 <div/>
