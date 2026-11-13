@@ -610,6 +610,8 @@ class InputExtractor {
       return node.types.map((t) => this.attrTagArgNode(t)).find(Boolean);
     }
     if (ts.isParenthesizedTypeNode(node)) return this.attrTagArgNode(node.type);
+    const indexed = this.indexedTypeNode(node);
+    if (indexed) return this.attrTagArgNode(indexed);
     if (!ts.isTypeReferenceNode(node)) return;
     const decl = this.resolveDeclaration(node.typeName);
     if (!decl || !ts.isTypeAliasDeclaration(decl)) return;
@@ -617,6 +619,30 @@ class InputExtractor {
       return decl.name.text === "AttrTag" ? node.typeArguments?.[0] : undefined;
     }
     return this.attrTagArgNode(decl.type);
+  }
+
+  /**
+   * The annotation an in-project indexed access names, eg the declared type
+   * of `seeMore` for `OtherInput["seeMore"]`.
+   */
+  private indexedTypeNode(node: TS.TypeNode) {
+    const { ts, checker } = this;
+    if (
+      !ts.isIndexedAccessTypeNode(node) ||
+      !ts.isLiteralTypeNode(node.indexType) ||
+      !ts.isStringLiteral(node.indexType.literal)
+    ) {
+      return;
+    }
+    const decl = checker
+      .getPropertyOfType(
+        checker.getTypeFromTypeNode(node.objectType),
+        node.indexType.literal.text,
+      )
+      ?.declarations?.find((d) => !this.isExternal(d));
+    if (!decl || !ts.isPropertySignature(decl)) return;
+    this.dependencies.add(decl.getSourceFile().fileName);
+    return decl.type;
   }
 
   private resolveDeclaration(name: TS.Node) {
@@ -866,6 +892,8 @@ class InputExtractor {
         return this.writtenMembers(decl.type, seen);
       }
     }
+    const indexed = this.indexedTypeNode(node);
+    if (indexed) return this.writtenMembers(indexed, seen);
     return [node];
   }
 
@@ -876,7 +904,7 @@ class InputExtractor {
       type = checker.getBaseConstraintOfType(type) || checker.getUnknownType();
     }
     if (type.isUnion()) {
-      const elements: DocgenTsType[] = [];
+      let elements: DocgenTsType[] = [];
       const boolLiterals: string[] = [];
       let nullable = false;
       for (const member of type.types) {
@@ -900,7 +928,13 @@ class InputExtractor {
       }
       const rank = (element: DocgenTsType) =>
         order.indexOf(element.raw) + 1 || Infinity;
-      elements.sort((a, b) => rank(a) - rank(b));
+      // Identical members from separate declarations show once.
+      elements = elements
+        .filter(
+          (element, i) =>
+            elements.findIndex((other) => other.raw === element.raw) === i,
+        )
+        .sort((a, b) => rank(a) - rank(b));
       // `null` shows in the type but, like `undefined`, not in the control.
       const raw = [...elements.map((element) => element.raw)]
         .concat(nullable ? ["null"] : [])

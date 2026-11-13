@@ -220,4 +220,18 @@ describe("docgen", () => {
     expect(props.class.tsType.raw).toBe("string");
     expect(props.class.description).toBe("Extra classes.");
   });
+
+  test("follows an attribute tag typed by indexed access", async () => {
+    const { props, dependencies } = await extract("indexed.marko");
+    expect(Object.keys(props.seeMore["@"]!).sort()).toEqual([
+      "...Marko.HTML.Button",
+      "extra",
+    ]);
+    expect(dependencies).toContain("indexed-types.ts");
+  });
+
+  test("shows identical union members once", async () => {
+    const { props } = await extract("duplicates.marko");
+    expect(props.selected.tsType.raw.match(/from/g)).toHaveLength(1);
+  });
 });
