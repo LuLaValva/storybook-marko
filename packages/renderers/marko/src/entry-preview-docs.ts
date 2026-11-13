@@ -22,6 +22,7 @@ export const decorators: Addon_DecoratorFunction<MarkoStoryResult>[] = [];
 
 const argTypesFromDocgen = (
   docgenProps: Record<string, DocgenProp>,
+  classApi: boolean,
 ): StrictArgTypes => {
   const argTypes: StrictArgTypes = {};
   const props = extractComponentSectionObject(docgenProps).filter(
@@ -37,8 +38,14 @@ const argTypesFromDocgen = (
     const { name, description, sbType, defaultValue, jsDocTags } = propDef;
     if (isChangeHandler(name)) continue;
     const { tsType, rest, "@": attrTagProps } = docgenProps[name];
-    argTypes[name] = {
-      name,
+    // A Marko 5 component gets dashed attributes camelCased, event handlers
+    // (`on-*`) aside, so its args go by the camelCased name.
+    const key =
+      classApi && !name.startsWith("on-")
+        ? name.replace(/-(\w)/g, (_, char: string) => char.toUpperCase())
+        : name;
+    argTypes[key] = {
+      name: key,
       ...(isChangeHandler(name + "Change") && { controllable: true }),
       description,
       type: { required: propDef.required, ...sbType },
@@ -53,7 +60,9 @@ const argTypesFromDocgen = (
       },
       // Summarizes inherited attributes, so there is no single value to set.
       ...(rest && { control: { disable: true } }),
-      ...(attrTagProps && { "@": argTypesFromDocgen(attrTagProps) }),
+      ...(attrTagProps && {
+        "@": argTypesFromDocgen(attrTagProps, classApi),
+      }),
     };
   }
   return argTypes;
@@ -64,10 +73,14 @@ const extractArgTypes = (component: unknown): StrictArgTypes | null => {
     return null;
   }
   // User argTypes are already flattened when these merge in; match them.
-  return flattenAttrTags(
-    argTypesFromDocgen(component.__docgenInfo.props),
+  const argTypes = flattenAttrTags(
+    argTypesFromDocgen(component.__docgenInfo.props, "renderSync" in component),
     undefined,
   )[0];
+  // Only a story's own `"@"` argTypes also flatten its args (which custom
+  // renders may not expect); docgen's just document the attributes.
+  for (const key in argTypes) delete argTypes[key]["@"];
+  return argTypes;
 };
 
 export const parameters = {

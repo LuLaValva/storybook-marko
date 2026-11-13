@@ -67,6 +67,11 @@ describe("click-count", () => {
             "Fired each time the internal counter is incremented.",
           ),
         ).toBeVisible();
+        // A Marko 5 tag gets its dashed attributes camelCased.
+        await expect(
+          panel.getByRole("row").filter({ hasText: /^countLabel/ }),
+        ).toBeVisible();
+        await expect(panel.getByText("count-label")).not.toBeVisible();
         await expect(
           panel
             .getByRole("row")

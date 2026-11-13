@@ -60,7 +60,7 @@ export function renderToCanvas(
     }
     if (instance) {
       const activeSubscriptions = subscriptionsByInstance.get(instance)!;
-      (instance as any).input = input;
+      (instance as any).input = processInput(input, ctx.storyContext, false);
       instance.update();
 
       for (const eventName in activeSubscriptions) {
@@ -147,6 +147,8 @@ function cleanup(canvasElement: MarkoRenderer["canvasElement"]) {
  */
 function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
   const input = {} as typeof args;
+  // Attr tags built here, so the story's own arg objects are never changed.
+  const built = new WeakSet<object>();
 
   for (const key in args) {
     // Unset, eg a single attr tag whose attributes were flattened into args.
@@ -156,12 +158,16 @@ function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
     // Attr tag nested attributes have been converted to `@foo > @bar > baz` by `entry-preview.ts`
     while (path.startsWith("@")) {
       const i = path.indexOf(" > ");
-      obj = obj[path.substring(1, i)] ??= attrTag({});
+      const name = path.substring(1, i);
+      if (!built.has(obj[name])) {
+        built.add((obj[name] = attrTag({ ...obj[name] })));
+      }
+      obj = obj[name];
       path = path.substring(i + 3);
     }
 
-    // Normalize body content
-    if (ctx.argTypes[key]?.bodyContent) {
+    // Normalize body content (given as text; this may run twice per render)
+    if (ctx.argTypes[key]?.bodyContent && typeof args[key] === "string") {
       const type = ctx.argTypes[key]?.bodyContent;
       if (tagsApi) {
         obj[path] = /* TODO */ args[key];

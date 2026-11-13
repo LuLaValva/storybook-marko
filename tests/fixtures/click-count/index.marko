@@ -9,6 +9,8 @@ export interface Input {
   count?: number;
   /** Fired each time the internal counter is incremented. */
   onIncrement?(count: number): void;
+  /** Read as `countLabel`, like any dashed attribute of a Marko 5 tag. */
+  "count-label"?: string;
 }
 
 class {
