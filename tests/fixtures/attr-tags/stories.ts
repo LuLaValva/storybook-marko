@@ -17,8 +17,8 @@ export default {
       "@": {
         icon: {
           "@": {
+            // Controllable from `sizeChange` in the Input type.
             size: {
-              controllable: true,
               control: { type: "inline-radio" },
             },
           },

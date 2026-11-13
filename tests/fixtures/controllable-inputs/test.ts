@@ -62,6 +62,23 @@ describe("controllable-inputs", () => {
         await storyTextbox.fill("updated from input");
         await expect(controlValue).toHaveValue("updated from input");
       });
+
+      test("Input types with a `Change` handler are controllable", async () => {
+        const page = await getPage();
+        const frame = page.frameLocator("#storybook-preview-iframe");
+        await page.goto(`/?path=/story/${InitialValues.id}`);
+        await page.getByText("Controls", { exact: true }).click(initialTimeout);
+        const panel = page.locator("#storybook-panel-root");
+
+        await expect(panel.getByText("pressed, pressedChange")).toBeVisible(
+          initialTimeout,
+        );
+
+        await frame.getByRole("button", { name: "yellow" }).click();
+        await expect(
+          panel.getByRole("radio", { name: "yellow" }),
+        ).toBeChecked();
+      });
     });
   });
 });

@@ -104,6 +104,12 @@ describe("attr-tags", () => {
 
         await panel.getByRole("radio", { name: /small/i }).click();
         await expect(storyButton).toHaveCSS("font-size", "8px");
+        await expect(panel.getByText("size, sizeChange")).toBeVisible();
+        await storyButton.click();
+        await expect(storyButton).toHaveCSS("font-size", "16px");
+        await expect(
+          panel.getByRole("radio", { name: /medium/i }),
+        ).toBeChecked();
       });
     });
   });

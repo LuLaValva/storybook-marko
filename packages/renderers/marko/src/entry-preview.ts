@@ -6,6 +6,7 @@ import type {
 } from "storybook/internal/types";
 
 import { flattenAttrTags } from "./attr-tag";
+import { addControllableChangeHandlers } from "./controllable";
 import type { MarkoRenderer } from "./types";
 
 export { render, renderToCanvas } from "./render";
@@ -28,18 +29,6 @@ function normalizeArgTypes(
     { id, title },
   );
   return normalized.argTypes ?? argTypes;
-}
-
-function addControllableChangeHandlers(argTypes: StrictArgTypes) {
-  for (const key in argTypes) {
-    const argType = argTypes[key];
-
-    if (argType.controllable && !argTypes[key + "Change"]) {
-      argTypes[key].name =
-        (argType.name || key) + ", " + (argType.name || key) + "Change";
-    }
-  }
-  return argTypes;
 }
 
 function addBodyContentSummary(argTypes: StrictArgTypes) {

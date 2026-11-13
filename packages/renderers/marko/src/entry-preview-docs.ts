@@ -12,6 +12,7 @@ import type {
 } from "storybook/internal/types";
 
 import { flattenAttrTags } from "./attr-tag";
+import { addControllableChangeHandlers } from "./controllable";
 import type { DocgenProp } from "./docgen";
 import type { MarkoStoryResult } from "./types";
 
@@ -20,6 +21,20 @@ export const decorators: Addon_DecoratorFunction<MarkoStoryResult>[] = [];
 const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
   const argTypes: StrictArgTypes = {};
   const props = extractComponentProps(component, "props");
+  // `fooChange` alongside `foo` is the controllable pattern: `foo` is wired
+  // up as controllable and the handler is rendered as part of its row.
+  const controllable = new Set<string>();
+  for (const { propDef, docgenInfo } of props) {
+    const { tsType } = docgenInfo as unknown as DocgenProp;
+    const name = propDef.name.slice(0, -"Change".length);
+    if (
+      propDef.name.endsWith("Change") &&
+      tsType?.type === "function" &&
+      props.some((other) => other.propDef.name === name)
+    ) {
+      controllable.add(name);
+    }
+  }
   for (const { propDef, docgenInfo } of props) {
     const { name, description, type, sbType, defaultValue, jsDocTags } =
       propDef;
@@ -28,19 +43,15 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
       rest,
       "@": attrTagProps,
     } = docgenInfo as unknown as DocgenProp;
-    // `fooChange` alongside `foo` is the controllable pattern, rendered as
-    // part of `foo`'s row.
     if (
       name.endsWith("Change") &&
-      tsType?.type === "function" &&
-      props.some(
-        (other) => other.propDef.name === name.slice(0, -"Change".length),
-      )
+      controllable.has(name.slice(0, -"Change".length))
     ) {
       continue;
     }
     argTypes[name] = {
       name,
+      ...(controllable.has(name) && { controllable: true }),
       description,
       type: { required: propDef.required, ...sbType },
       table: {
@@ -80,6 +91,10 @@ export const parameters = {
   },
 };
 
-export const argTypesEnhancers: ArgTypesEnhancer[] = [enhanceArgTypes];
+export const argTypesEnhancers: ArgTypesEnhancer[] = [
+  enhanceArgTypes,
+  // Docgen can mark args controllable after entry-preview named their rows.
+  ({ argTypes }) => addControllableChangeHandlers(argTypes),
+];
 
 export { applyDecorators } from "./decorators";
