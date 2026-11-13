@@ -59,3 +59,17 @@ export const InitialValues = {
     },
   },
 } as Story<Input>;
+
+export const Repeated = {
+  args: {
+    header: {
+      description: "Hi",
+      // Inherited from the native `<h1>`, so not one of the listed attributes.
+      class: "big",
+    } as any,
+    item: [
+      { name: "first", count: 1 },
+      { name: "second", count: 2 },
+    ] as any,
+  },
+} as Story<Input>;

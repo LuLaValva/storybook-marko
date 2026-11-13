@@ -149,6 +149,8 @@ function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
   const input = {} as typeof args;
 
   for (const key in args) {
+    // Unset, eg a single attr tag whose attributes were flattened into args.
+    if (args[key] === undefined) continue;
     let path = key;
     let obj = input;
     // Attr tag nested attributes have been converted to `@foo > @bar > baz` by `entry-preview.ts`

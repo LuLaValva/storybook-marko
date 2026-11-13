@@ -5,7 +5,7 @@ import { expect } from "playwright/test";
 import { testPage } from "../../test-page";
 import * as stories from "./stories";
 
-const { Default, InitialValues } = composeStories(stories);
+const { Default, InitialValues, Repeated } = composeStories(stories);
 const initialTimeout = { timeout: 60000 };
 
 describe("attr-tags", () => {
@@ -110,6 +110,32 @@ describe("attr-tags", () => {
         await expect(
           panel.getByRole("radio", { name: /medium/i }),
         ).toBeChecked();
+      });
+    });
+  });
+
+  describe(Repeated.storyName, () => {
+    describe("testing", () => {
+      test("renders repeated items and inherited attributes", async () => {
+        await render(Repeated);
+        expect(screen.getByRole("heading", { level: 1 }).className).toBe("big");
+        expect(screen.getByText(/first \(1\)/)).toBeTruthy();
+        expect(screen.getByText(/second \(2\)/)).toBeTruthy();
+      });
+    });
+
+    testPage((getPage) => {
+      test("renders repeated items and inherited attributes", async () => {
+        const page = await getPage();
+        const frame = page.frameLocator("#storybook-preview-iframe");
+        await page.goto(`/?path=/story/${Repeated.id}`);
+        await expect(frame.getByText(/second \(2\)/)).toBeVisible(
+          initialTimeout,
+        );
+        await expect(frame.getByText(/first \(1\)/)).toBeVisible();
+        await expect(frame.getByRole("heading", { name: "Hi" })).toHaveClass(
+          "big",
+        );
       });
     });
   });

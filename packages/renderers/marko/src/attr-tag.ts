@@ -20,7 +20,11 @@ function* attrTagIterator(this: AttrTag) {
   yield* this[rest];
 }
 
-/** Flattens `"@"` nested attr tag argTypes (and args) into `@parent > child` keys. */
+/**
+ * Flattens `"@"` nested attr tag argTypes into `@parent > child` keys, and a
+ * single attr tag's args with them. Any other value (eg an array of repeated
+ * tags) is left as given.
+ */
 export function flattenAttrTags(
   argTypes: StrictArgTypes,
   args: Args | undefined,
@@ -48,16 +52,24 @@ export function flattenAttrTags(
         control: { disable: true },
         table,
       };
-      newArgs && (newArgs[prefix + key] = null);
 
+      const arg = args?.[key];
+      const flatten = isPlainObject(arg);
       const [otherArgTypes, otherArgs] = flattenAttrTags(
         argType["@"] as StrictInputType,
-        args?.[key],
+        flatten ? arg : undefined,
         prefix + "@" + key + " > ",
       );
 
       Object.assign(newArgTypes, otherArgTypes);
-      newArgs && Object.assign(newArgs, otherArgs);
+      if (flatten) {
+        // Storybook merges these over the story's args, so the object itself
+        // can only be unset.
+        newArgs![prefix + key] = undefined;
+        Object.assign(newArgs!, otherArgs);
+      } else if (args && key in args) {
+        newArgs![prefix + key] = arg;
+      }
     } else {
       newArgTypes[prefix + key] = { ...argType, name, table };
       if (args && key in args) {
@@ -66,5 +78,18 @@ export function flattenAttrTags(
     }
   }
 
+  // Attributes the docs don't list (eg inherited native ones) still apply.
+  for (const key in args) {
+    if (!(key in argTypes)) newArgs![prefix + key] = args[key];
+  }
+
   return [newArgTypes, newArgs] as const;
+}
+
+function isPlainObject(value: unknown): value is Args {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
 }
