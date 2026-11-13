@@ -630,7 +630,11 @@ class InputExtractor {
   }
 
   /** The keys an `Omit` removes, with patterns like `on${string}` as `on*`. */
-  private stringLiterals(node: TS.TypeNode) {
+  private stringLiterals(node: TS.TypeNode): string[] {
+    // Walk a written union so the keys keep the order they were written in.
+    if (this.ts.isUnionTypeNode(node)) {
+      return node.types.flatMap((member) => this.stringLiterals(member));
+    }
     const type = this.checker.getTypeAtLocation(node);
     return (type.isUnion() ? type.types : [type]).flatMap((t) =>
       t.isStringLiteral()
@@ -694,9 +698,12 @@ class InputExtractor {
       else
         for (const value of boolLiterals)
           elements.push({ name: "literal", value });
-      return elements.length === 1
-        ? elements[0]
-        : { name: "union", raw, elements };
+      if (elements.length === 1) return elements[0];
+      // Eg a handler typed differently by each member of a union `Input`.
+      if (elements.every((element) => element.type === "function")) {
+        return { name: "signature", type: "function", raw };
+      }
+      return { name: "union", raw, elements };
     }
     if (type.isStringLiteral() || type.isNumberLiteral()) {
       return { name: "literal", value: raw };

@@ -34,6 +34,14 @@ describe("docgen", () => {
     expect(props.title["@"]!.level.description).toBe("The heading level.");
   });
 
+  test("treats a union of handlers as a handler", async () => {
+    const { props } = await extract("mixed.marko");
+    expect(props.valueChange.tsType).toMatchObject({
+      name: "signature",
+      type: "function",
+    });
+  });
+
   test("detects attribute tags without ES2015 lib types", async () => {
     const { props } = await extract("es5/attr-tag.marko");
     expect(props.item["@"]!.name.description).toBe("The item name.");
