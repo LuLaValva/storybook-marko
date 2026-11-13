@@ -28,6 +28,8 @@ const argTypesFromDocgen = (
   classApi: boolean,
 ): StrictArgTypes => {
   const argTypes: StrictArgTypes = {};
+  // docs-tools reads the first prop to tell the type system, so needs one.
+  if (!Object.keys(docgenProps).length) return argTypes;
   const props = extractComponentSectionObject(docgenProps).filter(
     (prop) => prop !== null,
   );

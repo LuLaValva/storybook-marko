@@ -42,8 +42,9 @@ function addBodyContentSummary(argTypes: StrictArgTypes) {
   return argTypes;
 }
 
-/** Names each controllable arg's row after its `Change` handler too. */
-function addControllableChangeHandlers(argTypes: StrictArgTypes) {
+const nameControllableRows: ArgTypesEnhancer<MarkoRenderer> = ({
+  argTypes,
+}) => {
   for (const key in argTypes) {
     const argType = argTypes[key];
     const name = argType.name || key;
@@ -53,10 +54,7 @@ function addControllableChangeHandlers(argTypes: StrictArgTypes) {
     }
   }
   return argTypes;
-}
-
-const nameControllableRows: ArgTypesEnhancer<MarkoRenderer> = ({ argTypes }) =>
-  addControllableChangeHandlers(argTypes);
+};
 // Runs after the first pass, which includes docs marking args controllable.
 nameControllableRows.secondPass = true;
 

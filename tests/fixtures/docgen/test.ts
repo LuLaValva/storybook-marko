@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { parameters } from "@storybook/marko/dist/entry-preview-docs.mjs";
 import { type DocgenProp, withDocgenInfo } from "@storybook/marko/docgen";
 
 const docgenReg = /__docgenInfo = (.*);$/m;
@@ -209,5 +210,16 @@ describe("docgen", () => {
     const info = JSON.parse(docgenReg.exec(result!.code)![1]);
     expect(info.description).toBe("A styled button.");
     expect(info.props).toEqual({});
+  });
+
+  test("converts docs with no props, at the top or in an attr tag", async () => {
+    for (const file of ["description-only.marko", "tree.marko"]) {
+      const fileName = path.join(import.meta.dirname, file);
+      const result = await withDocgenInfo("export default {};\n", fileName);
+      const __docgenInfo = JSON.parse(docgenReg.exec(result!.code)![1]);
+      expect(() =>
+        parameters.docs.extractArgTypes({ __docgenInfo } as any),
+      ).not.toThrow();
+    }
   });
 });
