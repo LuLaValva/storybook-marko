@@ -381,7 +381,6 @@ function createMarkoDocgen(
     );
     const props = extractor.props(
       type,
-      sourceFile,
       declared.flatMap((symbol) => symbol.declarations!),
     );
     extractor.dependencies.delete(sourceFile.fileName);
@@ -427,7 +426,6 @@ class InputExtractor {
    */
   props(
     type: TS.Type,
-    fallbackLocation: TS.Node,
     baseNodes: readonly TS.Node[],
   ): Record<string, DocgenProp> {
     const { ts, checker } = this;
@@ -436,11 +434,19 @@ class InputExtractor {
       // Docs come only from in-project declarations, so inherited native
       // attributes (eg `Input extends Marko.HTML.Input`) are summarized by
       // `externalBases` rather than listed, and re-declared ones don't pick up
-      // the lib's docs unless asked to with `@inheritDoc`.
+      // the lib's docs unless asked to with `@inheritDoc`. A prop with no
+      // declaration (eg renamed by a mapped type's `as`) has nowhere to be
+      // documented either, so it is left to its source's summary too.
       const declarations = new Set(
         prop.declarations?.filter((decl) => !this.isExternal(decl)),
       );
-      if (prop.declarations?.length && !declarations.size) continue;
+      if (!declarations.size) continue;
+      // A prop re-declared over an external one (eg in an intersection) shows
+      // as declared here rather than as TypeScript's merge of the two.
+      const own =
+        declarations.size < prop.declarations!.length
+          ? [...declarations][0]
+          : undefined;
 
       const descriptions = new Set<string>();
       let defaultValue: { value: string } | undefined;
@@ -473,11 +479,11 @@ class InputExtractor {
         }
       }
 
-      const location = prop.valueDeclaration || prop.declarations?.[0];
-      const propType = checker.getTypeOfSymbolAtLocation(
-        prop,
-        location || fallbackLocation,
-      );
+      const location = own || prop.valueDeclaration || prop.declarations![0];
+      const propType =
+        own && ts.isPropertySignature(own) && own.type
+          ? checker.getTypeFromTypeNode(own.type)
+          : checker.getTypeOfSymbolAtLocation(prop, location);
       const attrTagType = this.attrTagType(propType);
       const declaredType =
         location && ts.isPropertySignature(location)
@@ -487,11 +493,7 @@ class InputExtractor {
       if (attrTagType && !this.expanding.has(attrTagType)) {
         this.expanding.add(attrTagType);
         const argNode = declaredType && this.attrTagArgNode(declaredType);
-        nested = this.props(
-          attrTagType,
-          location || fallbackLocation,
-          argNode ? [argNode] : [],
-        );
+        nested = this.props(attrTagType, argNode ? [argNode] : []);
         this.expanding.delete(attrTagType);
       }
       props[prop.name] = {
@@ -500,7 +502,17 @@ class InputExtractor {
         tsType:
           attrTagType && !(propType.isUnion() && this.isMixedUnion(propType))
             ? { name: "AttrTag", raw: "AttrTag" }
-            : this.tsTypeOf(propType, declaredType),
+            : own && ts.isMethodSignature(own)
+              ? {
+                  name: "signature",
+                  type: "function",
+                  raw: checker.signatureToString(
+                    checker.getSignatureFromDeclaration(own)!,
+                    undefined,
+                    ts.TypeFormatFlags.WriteArrowStyleSignature,
+                  ),
+                }
+              : this.tsTypeOf(propType, declaredType),
         ...(defaultValue && { defaultValue }),
         ...(attrTagType && { "@": nested || {} }),
       };
@@ -509,7 +521,7 @@ class InputExtractor {
     // member-only props in as optional.
     if (type.isUnion()) {
       for (const member of type.types) {
-        const memberProps = this.props(member, fallbackLocation, []);
+        const memberProps = this.props(member, []);
         for (const name in memberProps) {
           if (!(name in props)) {
             props[name] = { ...memberProps[name], required: false };
@@ -629,23 +641,33 @@ class InputExtractor {
   private externalBases(nodes: readonly TS.Node[]) {
     const { ts, checker } = this;
     const rows: Record<string, DocgenProp> = {};
-    const visited = new Set<TS.Node>();
-    // `omitted` holds the keys an enclosing `Omit<Local, ...>` removes.
-    const visit = (node: TS.Node, omitted: readonly string[]): void => {
-      if (visited.has(node)) return;
-      visited.add(node);
+    // `omitted` holds the keys an enclosing `Omit<Local, ...>` removes, and
+    // `args` the type arguments a generic in-project base was given, so that
+    // eg `T` in `type Camel<T> = T & {...}` leads to `Camel<ChipInput>`'s
+    // `ChipInput` (while `T` merely used as a member type leads nowhere).
+    type Args = Map<TS.Node, { node: TS.TypeNode; args: Args }>;
+    const visited = new Map<TS.Node, Set<Args>>();
+    const visit = (
+      node: TS.Node,
+      omitted: readonly string[],
+      args: Args,
+    ): void => {
+      // A generic base is walked once per set of type arguments.
+      const seen = visited.get(node) || new Set();
+      if (seen.has(args)) return;
+      visited.set(node, seen.add(args));
       if (ts.isInterfaceDeclaration(node)) {
         this.dependencies.add(node.getSourceFile().fileName);
         for (const clause of node.heritageClauses || []) {
-          for (const base of clause.types) visit(base, omitted);
+          for (const base of clause.types) visit(base, omitted, args);
         }
       } else if (ts.isTypeAliasDeclaration(node)) {
         this.dependencies.add(node.getSourceFile().fileName);
-        visit(node.type, omitted);
+        visit(node.type, omitted, args);
       } else if (ts.isIntersectionTypeNode(node) || ts.isUnionTypeNode(node)) {
-        for (const member of node.types) visit(member, omitted);
+        for (const member of node.types) visit(member, omitted, args);
       } else if (ts.isParenthesizedTypeNode(node)) {
-        visit(node.type, omitted);
+        visit(node.type, omitted, args);
       } else if (
         ts.isTypeReferenceNode(node) ||
         ts.isExpressionWithTypeArguments(node)
@@ -653,12 +675,27 @@ class InputExtractor {
         const decl = this.resolveDeclaration(
           ts.isTypeReferenceNode(node) ? node.typeName : node.expression,
         );
+        if (decl && ts.isTypeParameterDeclaration(decl)) {
+          const arg = args.get(decl);
+          if (arg) visit(arg.node, omitted, arg.args);
+          return;
+        }
         if (decl && !this.isExternal(decl)) {
           if (
             ts.isInterfaceDeclaration(decl) ||
             ts.isTypeAliasDeclaration(decl)
-          )
-            visit(decl, omitted);
+          ) {
+            visit(
+              decl,
+              omitted,
+              new Map(
+                decl.typeParameters?.flatMap((param, i) => {
+                  const arg = node.typeArguments?.[i] || param.default;
+                  return arg ? [[param, { node: arg, args }]] : [];
+                }),
+              ),
+            );
+          }
           return;
         }
         const utility = this.utilityOf(node);
@@ -674,6 +711,7 @@ class InputExtractor {
               utility === "Omit" && keys
                 ? [...omitted, ...this.stringLiterals(keys)]
                 : omitted,
+              args,
             );
             return;
           }
@@ -698,7 +736,7 @@ class InputExtractor {
         rows[name] = row;
       }
     };
-    for (const node of nodes) visit(node, []);
+    for (const node of nodes) visit(node, [], new Map());
     return rows;
   }
 
@@ -764,7 +802,9 @@ class InputExtractor {
   /**
    * The type for controls and display. An annotation that only names types
    * from outside the project (eg `Marko.Body`) displays as written, since
-   * those names are what readers know; in-project names display resolved.
+   * those names are what readers know. Otherwise it displays as the checker
+   * prints it, which spells out unions (eg an in-project `Size` alias) and
+   * keeps the names of object types.
    */
   private tsTypeOf(type: TS.Type, written?: TS.TypeNode): DocgenTsType {
     const { ts } = this;

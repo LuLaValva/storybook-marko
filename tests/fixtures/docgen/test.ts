@@ -203,4 +203,21 @@ describe("docgen", () => {
     expect(props.size.tsType.raw).toBe('"small" | "large"');
     expect(dependencies).toContain("size.ts");
   });
+
+  test("summarizes props a mapped type renames or spreads", async () => {
+    const { props } = await extract("mapped.marko");
+    expect(Object.keys(props).sort()).toEqual([
+      "...Marko.HTML.Img",
+      "...Marko.HTML.Span",
+      "item",
+      "mine",
+    ]);
+  });
+
+  test("shows a re-declared native attribute as declared", async () => {
+    const { props } = await extract("redeclare.marko");
+    expect(props.onClick.tsType.raw).toBe("(event: MouseEvent) => void");
+    expect(props.class.tsType.raw).toBe("string");
+    expect(props.class.description).toBe("Extra classes.");
+  });
 });
