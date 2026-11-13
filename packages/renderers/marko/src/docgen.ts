@@ -11,7 +11,8 @@ type LanguageTools = typeof import("@marko/language-tools");
 
 export interface DocgenTsType {
   name: string;
-  raw?: string;
+  /** The type as displayed. */
+  raw: string;
   value?: string;
   type?: "function";
   elements?: DocgenTsType[];
@@ -405,7 +406,7 @@ class InputExtractor {
         required: !(prop.flags & ts.SymbolFlags.Optional),
         tsType:
           attrTagType && !(propType.isUnion() && this.isMixedUnion(propType))
-            ? { name: "AttrTag" }
+            ? { name: "AttrTag", raw: "AttrTag" }
             : this.tsTypeOf(propType, declaredType),
         ...(defaultValue && { defaultValue }),
         ...(attrTagType && { "@": nested || {} }),
@@ -654,7 +655,7 @@ class InputExtractor {
           ? `Also accepts the attributes and event handlers of the native [\`<${nativeTag}>\` tag](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/${nativeTag})${exceptText}.`
           : `Also accepts the members of \`${typeName}\`${exceptText}.`,
         required: false,
-        tsType: { name: node.getText() },
+        tsType: { name: node.getText(), raw: node.getText() },
         rest: true,
       },
     ];
@@ -672,10 +673,10 @@ class InputExtractor {
     };
   }
 
-  private convert(type: TS.Type): DocgenTsType & { raw: string } {
+  private convert(type: TS.Type): DocgenTsType {
     const { ts, checker } = this;
     if (type.isUnion()) {
-      const elements: (DocgenTsType & { raw: string })[] = [];
+      const elements: DocgenTsType[] = [];
       const boolLiterals: string[] = [];
       for (const member of type.types) {
         if (member.flags & ts.TypeFlags.Undefined) continue;
