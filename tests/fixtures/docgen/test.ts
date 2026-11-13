@@ -121,6 +121,7 @@ describe("docgen", () => {
     expect(props.index.tsType.raw).toBe("string | number");
     expect(props.tag.tsType.raw).toBe("keyof Marko.NativeTags");
     expect(props.slot.tsType.raw).toBe("Marko.Body | Marko.HTML.Span");
+    expect(props.nothing.tsType.name).not.toBe("signature");
     expect(props.mode.tsType.elements!.map((e) => e.name)).toEqual([
       "true",
       "literal",
@@ -234,5 +235,7 @@ describe("docgen", () => {
   test("shows identical union members once", async () => {
     const { props } = await extract("duplicates.marko");
     expect(props.selected.tsType.raw.match(/from/g)).toHaveLength(1);
+    // Declared differently by each member, so no one annotation describes it.
+    expect(props.content.tsType.raw).toMatch(/string/);
   });
 });

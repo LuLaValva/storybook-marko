@@ -25,6 +25,8 @@ export interface Input<Index extends number | string = number> {
   slot?:
     | Marko.Body
     | Marko.HTML.Span;
+  /** Only ever null. */
+  nothing?: null;
   /** Only names a type from outside the project. */
   tag?: keyof Marko.NativeTags;
 }

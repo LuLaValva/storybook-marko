@@ -511,7 +511,7 @@ class InputExtractor {
                     ts.TypeFormatFlags.WriteArrowStyleSignature,
                   ),
                 }
-              : this.tsTypeOf(propType, declaredType),
+              : this.tsTypeOf(propType, declaredType, declarations.size === 1),
         ...(defaultValue && { defaultValue }),
         ...(attrTagType && { "@": nested || {} }),
       };
@@ -691,16 +691,11 @@ class InputExtractor {
     // eg `T` in `type Camel<T> = T & {...}` leads to `Camel<ChipInput>`'s
     // `ChipInput` (while `T` merely used as a member type leads nowhere).
     type Args = Map<TS.Node, { node: TS.TypeNode; args: Args }>;
-    const visited = new Map<TS.Node, Set<Args>>();
     const visit = (
       node: TS.Node,
       omitted: readonly string[],
       args: Args,
     ): void => {
-      // A generic base is walked once per set of type arguments.
-      const seen = visited.get(node) || new Set();
-      if (seen.has(args)) return;
-      visited.set(node, seen.add(args));
       if (ts.isInterfaceDeclaration(node)) {
         this.dependencies.add(node.getSourceFile().fileName);
         for (const clause of node.heritageClauses || []) {
@@ -851,7 +846,13 @@ class InputExtractor {
    * prints it, which spells out unions (eg an in-project `Size` alias) and
    * keeps the names of object types.
    */
-  private tsTypeOf(type: TS.Type, written?: TS.TypeNode): DocgenTsType {
+  private tsTypeOf(
+    type: TS.Type,
+    written: TS.TypeNode | undefined,
+    // Eg a prop declared by several members of a union `Input` has more to
+    // its type than any one annotation.
+    fullyWritten: boolean,
+  ): DocgenTsType {
     const { ts } = this;
     const tsType = this.convert(
       type,
@@ -863,7 +864,7 @@ class InputExtractor {
           )
         : [],
     );
-    return written && this.namesOnlyExternalTypes(written)
+    return written && fullyWritten && this.namesOnlyExternalTypes(written)
       ? { ...tsType, raw: this.textOf(written) }
       : tsType;
   }
@@ -960,7 +961,10 @@ class InputExtractor {
         .join(" | ");
       if (elements.length === 1) return { ...elements[0], raw };
       // Eg a handler typed differently by each member of a union `Input`.
-      if (elements.every((element) => element.type === "function")) {
+      if (
+        elements.length &&
+        elements.every((element) => element.type === "function")
+      ) {
         return { name: "signature", type: "function", raw };
       }
       return { name: "union", raw, elements };
