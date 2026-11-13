@@ -7,7 +7,7 @@ import type {
 } from "storybook/internal/types";
 import { addons } from "storybook/preview-api";
 
-import { attrTag } from "./attr-tag";
+import { attrTag, isPlainObject } from "./attr-tag";
 import type { MarkoRenderer } from "./types";
 
 type Subscriptions = Record<string, (...args: unknown[]) => void>;
@@ -150,7 +150,7 @@ function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
   // Attr tags built here, so the story's own arg objects are never changed.
   const built = new WeakSet<object>();
 
-  for (const key in args) {
+  args: for (const key in args) {
     // Unset, eg a single attr tag whose attributes were flattened into args.
     if (args[key] === undefined) continue;
     let path = key;
@@ -159,8 +159,11 @@ function processInput(args: Args, ctx: StoryContext, tagsApi: boolean) {
     while (path.startsWith("@")) {
       const i = path.indexOf(" > ");
       const name = path.substring(1, i);
-      if (!built.has(obj[name])) {
-        built.add((obj[name] = attrTag({ ...obj[name] })));
+      const value = obj[name];
+      if (!built.has(value)) {
+        // One tag's attribute can't apply to eg an array of repeated tags.
+        if (value !== undefined && !isPlainObject(value)) continue args;
+        built.add((obj[name] = attrTag({ ...value })));
       }
       obj = obj[name];
       path = path.substring(i + 3);

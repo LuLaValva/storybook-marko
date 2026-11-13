@@ -137,6 +137,32 @@ describe("attr-tags", () => {
           "big",
         );
       });
+
+      test("a nested control leaves repeated items alone", async () => {
+        const page = await getPage();
+        const frame = page.frameLocator("#storybook-preview-iframe");
+        await page.goto(`/?path=/story/${Repeated.id}`);
+        await page.getByText("Controls", { exact: true }).click(initialTimeout);
+        const panel = page.locator("#storybook-panel-root");
+        const nameRow = panel.getByRole("row").filter({ hasText: /^name\b/ });
+        await nameRow
+          .getByRole("button", { name: /set string/i })
+          .click(initialTimeout);
+        await nameRow.getByRole("textbox").fill("changed");
+        // Then edit the single `header`, so there is a render to wait for.
+        const descriptionRow = panel
+          .getByRole("row")
+          .filter({ hasText: /^description\b/ });
+        await descriptionRow
+          .getByRole("button", { name: /set string/i })
+          .click();
+        await descriptionRow.getByRole("textbox").fill("Edited");
+        await expect(
+          frame.getByRole("heading", { name: "Edited" }),
+        ).toHaveClass("big");
+        await expect(frame.getByText(/first \(1\)/)).toBeVisible();
+        await expect(frame.getByText(/second \(2\)/)).toBeVisible();
+      });
     });
   });
 });

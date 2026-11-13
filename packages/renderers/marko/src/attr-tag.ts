@@ -86,7 +86,7 @@ export function flattenAttrTags(
   return [newArgTypes, newArgs] as const;
 }
 
-function isPlainObject(value: unknown): value is Args {
+export function isPlainObject(value: unknown): value is Args {
   return (
     typeof value === "object" &&
     value !== null &&
