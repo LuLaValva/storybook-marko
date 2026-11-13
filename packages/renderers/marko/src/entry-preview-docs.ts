@@ -44,7 +44,11 @@ const argTypesFromDocgen = (component: unknown): StrictArgTypes => {
       description,
       type: { required: propDef.required, ...sbType },
       table: {
-        type: type ?? undefined,
+        // docs-tools summarizes unions and literals by kind; show the type.
+        type:
+          tsType?.raw || tsType?.name === "literal"
+            ? { summary: tsType.raw ?? tsType.value! }
+            : (type ?? undefined),
         jsDocTags,
         defaultValue: defaultValue ?? undefined,
       },

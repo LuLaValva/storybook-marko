@@ -1,6 +1,6 @@
 import type { Shared } from "./shared";
 
-export interface Base extends Omit<Marko.HTML.Span, "role" | "aria-label"> {
+export interface Base extends Omit<Marko.HTML.Span, "role" | "aria-label" | `on${string}`> {
   /** Declared on an in-project base. */
   base?: string;
 }

@@ -56,10 +56,12 @@ describe("docgen", () => {
     expect(props["...Marko.HTML.Span"]).toMatchObject({
       rest: true,
       required: false,
-      tsType: { name: 'Omit<Marko.HTML.Span, "role" | "aria-label">' },
+      tsType: {
+        name: 'Omit<Marko.HTML.Span, "role" | "aria-label" | `on${string}`>',
+      },
     });
     expect(props["...Marko.HTML.Span"].description).toMatch(
-      /native \[`<span>` tag\]\(.*\/span\), except `role`, `aria-label`\.$/,
+      /native \[`<span>` tag\]\(.*\/span\), except `role`, `aria-label`, `on\*`\.$/,
     );
     expect(Object.keys(props.heading["@"]!).sort()).toEqual([
       "...Marko.HTML.H1",
@@ -80,7 +82,7 @@ describe("docgen", () => {
     expect(props.base).toBeUndefined();
     expect(props.shared.description).toBe("Declared in a separate file.");
     expect(props["...Marko.HTML.Span"].description).toMatch(
-      /, except `hidden`, `title`, `role`, `aria-label`\.$/,
+      /, except `hidden`, `title`, `role`, `aria-label`, `on\*`\.$/,
     );
     expect(props.label["@"]!['...Marko.Input<"label">'].description).toMatch(
       /native \[`<label>` tag\]/,

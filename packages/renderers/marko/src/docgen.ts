@@ -629,11 +629,16 @@ class InputExtractor {
       : undefined;
   }
 
+  /** The keys an `Omit` removes, with patterns like `on${string}` as `on*`. */
   private stringLiterals(node: TS.TypeNode) {
     const type = this.checker.getTypeAtLocation(node);
-    return (type.isUnion() ? type.types : [type])
-      .filter((t) => t.isStringLiteral())
-      .map((t) => (t as TS.StringLiteralType).value);
+    return (type.isUnion() ? type.types : [type]).flatMap((t) =>
+      t.isStringLiteral()
+        ? [t.value]
+        : t.flags & this.ts.TypeFlags.TemplateLiteral
+          ? [(t as TS.TemplateLiteralType).texts.join("*")]
+          : [],
+    );
   }
 
   private restRow(
