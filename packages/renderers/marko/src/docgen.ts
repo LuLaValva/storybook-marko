@@ -68,6 +68,9 @@ const warned = new Set<string>();
 const docgens = new Map<string, GetDocgenInfo>();
 let toolsPromise: Promise<Tools | undefined> | undefined;
 
+/** A node's source text on one line, for display. */
+const textOf = (node: TS.Node) => node.getText().replace(/\s+/g, " ");
+
 /** Whether docs are on, so that docgen has a reader. */
 export async function isDocsEnabled(options: Options) {
   return (
@@ -135,29 +138,84 @@ async function loadTools(): Promise<Tools | undefined> {
 /** One docgen per tsconfig, found from the component like an editor would. */
 function getMarkoDocgen(tools: Tools, fileName: string) {
   const { ts } = tools;
-  const host = ts.sys;
   const fileDir = path.dirname(fileName);
-  const configFile =
-    ts.findConfigFile(fileDir, host.fileExists, "tsconfig.json") ||
-    ts.findConfigFile(fileDir, host.fileExists, "jsconfig.json");
-  const key = configFile || "";
+  const nearest =
+    ts.findConfigFile(fileDir, ts.sys.fileExists, "tsconfig.json") ||
+    ts.findConfigFile(fileDir, ts.sys.fileExists, "jsconfig.json");
+  const project = nearest
+    ? findProject(tools, nearest, fileName) || configs.get(nearest)
+    : undefined;
+  const key = project?.configFile || "";
   let docgen = docgens.get(key);
   if (!docgen) {
-    docgen = createMarkoDocgen(
-      tools,
-      configFile,
-      configFile ? path.dirname(configFile) : host.getCurrentDirectory(),
-    );
+    docgen = createMarkoDocgen(tools, project);
     docgens.set(key, docgen);
   }
   return docgen;
 }
 
+interface ProjectConfig {
+  configFile: string;
+  parsed: TS.ParsedCommandLine;
+  fileNames: Set<string>;
+}
+const configs = new Map<string, ProjectConfig>();
+
+/**
+ * The project including `fileName`: `configFile`'s own, or (as tsserver
+ * does for a "solution" config, eg create-vite's) one it references.
+ */
+function findProject(
+  tools: Tools,
+  configFile: string,
+  fileName: string,
+  seen = new Set<string>(),
+): ProjectConfig | undefined {
+  const { ts, Processors } = tools;
+  if (seen.has(configFile)) return;
+  seen.add(configFile);
+  let project = configs.get(configFile);
+  if (!project) {
+    const parsed = ts.getParsedCommandLineOfConfigFile(
+      configFile,
+      undefined,
+      { ...ts.sys, onUnRecoverableConfigFileDiagnostic() {} },
+      undefined,
+      undefined,
+      Processors.extensions.map((extension) => ({
+        extension,
+        isMixedContent: false,
+        scriptKind: ts.ScriptKind.Deferred,
+      })),
+    );
+    if (!parsed) return;
+    project = {
+      configFile,
+      parsed,
+      fileNames: new Set(parsed.fileNames.map((name) => path.resolve(name))),
+    };
+    configs.set(configFile, project);
+  }
+  if (project.fileNames.has(fileName)) return project;
+  for (const reference of project.parsed.projectReferences || []) {
+    const found = findProject(
+      tools,
+      ts.resolveProjectReferencePath(reference),
+      fileName,
+      seen,
+    );
+    if (found) return found;
+  }
+}
+
 function createMarkoDocgen(
   { ts, Processors, Project }: Tools,
-  configFile: string | undefined,
-  dir: string,
+  project: ProjectConfig | undefined,
 ): GetDocgenInfo {
+  const configFile = project?.configFile;
+  const dir = configFile
+    ? path.dirname(configFile)
+    : ts.sys.getCurrentDirectory();
   // Resolve Marko's own types from the project, not wherever Storybook runs.
   const host = { ...ts.sys, getCurrentDirectory: () => dir };
   const processors = Processors.create({ ts, host, configFile });
@@ -168,20 +226,7 @@ function createMarkoDocgen(
 
   // Start from every file the config includes, as an editor would, so that
   // components share one program rather than each rebuilding it.
-  const parsedConfig = configFile
-    ? ts.getParsedCommandLineOfConfigFile(
-        configFile,
-        undefined,
-        { ...host, onUnRecoverableConfigFileDiagnostic() {} },
-        undefined,
-        undefined,
-        Object.keys(processors).map((extension) => ({
-          extension,
-          isMixedContent: false,
-          scriptKind: ts.ScriptKind.Deferred,
-        })),
-      )
-    : undefined;
+  const parsedConfig = project?.parsed;
   const compilerOptions: TS.CompilerOptions = {
     ...parsedConfig?.options,
     noEmit: true,
@@ -309,7 +354,9 @@ function createMarkoDocgen(
     );
     // `Input` may just name another in-project type, eg a split component's
     // `Component["input"]`, whose declaration then holds the docs.
-    const declared = [inputSymbol, type.aliasSymbol, type.getSymbol()].filter(
+    const declared = [
+      ...new Set([inputSymbol, type.aliasSymbol, type.getSymbol()]),
+    ].filter(
       (symbol): symbol is TS.Symbol =>
         !!symbol?.declarations?.some((decl) => !extractor.isExternal(decl)),
     );
@@ -384,7 +431,12 @@ class InputExtractor {
         for (const text of this.jsDocComments(decl)) descriptions.add(text);
         for (const tag of ts.getJSDocTags(decl)) {
           const name = tag.tagName.text;
-          const text = ts.getTextOfJSDocComment(tag.comment) ?? "";
+          const text = [
+            ts.isJSDocParameterTag(tag) && tag.name.getText(),
+            ts.getTextOfJSDocComment(tag.comment),
+          ]
+            .filter(Boolean)
+            .join(" ");
           if (name === "default" || name === "defaultValue") {
             if (text) defaultValue = { value: text };
           } else if (name.toLowerCase() === "inheritdoc") {
@@ -606,13 +658,14 @@ class InputExtractor {
         }
         const type = checker.getTypeAtLocation(node);
         const props = checker.getPropertiesOfType(type);
+        // Rows stand in for external props, which aren't listed one by one.
         if (
-          !props.length ||
-          !props.every((prop) =>
+          !props.some((prop) =>
             prop.declarations?.every((d) => this.isExternal(d)),
           )
-        )
+        ) {
           return;
+        }
         const [name, row] = this.restRow(
           node,
           omitted.filter((key) => checker.getPropertyOfType(type, key)),
@@ -638,18 +691,17 @@ class InputExtractor {
 
   /** The keys an `Omit` removes, with patterns like `on${string}` as `on*`. */
   private stringLiterals(node: TS.TypeNode): string[] {
-    // Walk a written union so the keys keep the order they were written in.
-    if (this.ts.isUnionTypeNode(node)) {
-      return node.types.flatMap((member) => this.stringLiterals(member));
-    }
-    const type = this.checker.getTypeAtLocation(node);
-    return (type.isUnion() ? type.types : [type]).flatMap((t) =>
-      t.isStringLiteral()
-        ? [t.value]
-        : t.flags & this.ts.TypeFlags.TemplateLiteral
-          ? [(t as TS.TemplateLiteralType).texts.join("*")]
-          : [],
-    );
+    const { ts, checker } = this;
+    return this.writtenMembers(node).flatMap((member) => {
+      const type = checker.getTypeAtLocation(member);
+      return (type.isUnion() ? type.types : [type]).flatMap((t) =>
+        t.isStringLiteral()
+          ? [t.value]
+          : t.flags & ts.TypeFlags.TemplateLiteral
+            ? [(t as TS.TemplateLiteralType).texts.join("*")]
+            : [],
+      );
+    });
   }
 
   private restRow(
@@ -659,7 +711,8 @@ class InputExtractor {
     const utility = this.utilityOf(node);
     const [arg, keys] = node.typeArguments || [];
     // See through the lib's utility types to the type they modify.
-    const typeName = utility ? arg.getText() : node.getText();
+    const typeName = textOf(utility ? arg : node);
+    const typeText = textOf(node);
     const except = [
       ...omitted,
       ...(utility === "Omit" && keys ? this.stringLiterals(keys) : []),
@@ -677,7 +730,7 @@ class InputExtractor {
           ? `Also accepts the attributes and event handlers of the native [\`<${nativeTag}>\` tag](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/${nativeTag})${exceptText}.`
           : `Also accepts the members of \`${typeName}\`${exceptText}.`,
         required: false,
-        tsType: { name: node.getText(), raw: node.getText() },
+        tsType: { name: typeText, raw: typeText },
         rest: true,
       },
     ];
@@ -689,12 +742,19 @@ class InputExtractor {
    * those names are what readers know; in-project names display resolved.
    */
   private tsTypeOf(type: TS.Type, written?: TS.TypeNode): DocgenTsType {
+    const { ts } = this;
     const tsType = this.convert(
       type,
-      written ? this.writtenMembers(written) : [],
+      written
+        ? this.writtenMembers(written).map((member) =>
+            ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal)
+              ? JSON.stringify(member.literal.text)
+              : textOf(member),
+          )
+        : [],
     );
     return written && this.namesOnlyExternalTypes(written)
-      ? { ...tsType, raw: written.getText().replace(/\s+/g, " ") }
+      ? { ...tsType, raw: textOf(written) }
       : tsType;
   }
 
@@ -718,14 +778,14 @@ class InputExtractor {
   }
 
   /**
-   * A union's members in the order written, following in-project aliases.
-   * The checker orders them by when each type was first created anywhere in
-   * the program, which would shuffle enum options.
+   * A written union's members in order, following in-project aliases. The
+   * checker orders a union by when each member type was first created
+   * anywhere in the program, which would shuffle eg enum options.
    */
   private writtenMembers(
     node: TS.TypeNode,
     seen = new Set<TS.Node>(),
-  ): string[] {
+  ): TS.TypeNode[] {
     const { ts } = this;
     if (seen.has(node)) return [];
     seen.add(node);
@@ -737,13 +797,11 @@ class InputExtractor {
     }
     if (ts.isTypeReferenceNode(node)) {
       const decl = this.resolveDeclaration(node.typeName);
-      return decl && ts.isTypeAliasDeclaration(decl) && !this.isExternal(decl)
-        ? this.writtenMembers(decl.type, seen)
-        : [];
+      if (decl && ts.isTypeAliasDeclaration(decl) && !this.isExternal(decl)) {
+        return this.writtenMembers(decl.type, seen);
+      }
     }
-    return ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
-      ? [JSON.stringify(node.literal.text)]
-      : [node.getText()];
+    return [node];
   }
 
   private convert(type: TS.Type, order: readonly string[] = []): DocgenTsType {

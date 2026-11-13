@@ -164,4 +164,14 @@ describe("docgen", () => {
       'Also accepts the members of `Pick<Marko.HTML.Span, "title" | "id">`.',
     );
   });
+
+  test("uses the project a solution tsconfig references", async () => {
+    const { props } = await extract("solution/index.marko");
+    expect(props.label.tsType.raw).toBe("string | null");
+  });
+
+  test("keeps the parameter name of @param tags", async () => {
+    const { props } = await extract("solution/index.marko");
+    expect(props.label.description).toContain("@param unused not a real param");
+  });
 });
