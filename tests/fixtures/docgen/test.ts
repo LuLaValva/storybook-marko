@@ -174,4 +174,17 @@ describe("docgen", () => {
     const { props } = await extract("solution/index.marko");
     expect(props.label.description).toContain("@param unused not a real param");
   });
+
+  test("keeps pattern keys omitted from an in-project base", async () => {
+    const { props } = await extract("omit-pattern.marko");
+    expect(props["...Marko.HTML.Div"].description).toMatch(
+      /, except `on\*`, `role`\.$/,
+    );
+  });
+
+  test("watches files that only declare a prop's type", async () => {
+    const { props, dependencies } = await extract("omit-pattern.marko");
+    expect(props.size.tsType.raw).toBe('"small" | "large"');
+    expect(dependencies).toContain("size.ts");
+  });
 });

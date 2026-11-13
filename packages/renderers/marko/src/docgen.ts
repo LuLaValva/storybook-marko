@@ -68,6 +68,15 @@ const warned = new Set<string>();
 const docgens = new Map<string, GetDocgenInfo>();
 let toolsPromise: Promise<Tools | undefined> | undefined;
 
+/** Matches the property names an `Omit` key covers, eg `on*` (`on${string}`). */
+const keyPattern = (key: string) =>
+  new RegExp(
+    `^${key
+      .split("*")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*")}$`,
+  );
+
 /** A node's source text on one line, for display. */
 const textOf = (node: TS.Node) => node.getText().replace(/\s+/g, " ");
 
@@ -594,7 +603,12 @@ class InputExtractor {
     if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
       symbol = checker.getAliasedSymbol(symbol);
     }
-    return symbol?.declarations?.[0];
+    const decl = symbol?.declarations?.[0];
+    // Eg a union alias in a `.ts` file, which only a type import reaches.
+    if (decl && !this.isExternal(decl)) {
+      this.dependencies.add(decl.getSourceFile().fileName);
+    }
+    return decl;
   }
 
   /**
@@ -668,7 +682,10 @@ class InputExtractor {
         }
         const [name, row] = this.restRow(
           node,
-          omitted.filter((key) => checker.getPropertyOfType(type, key)),
+          omitted.filter((key) => {
+            const pattern = keyPattern(key);
+            return props.some((prop) => pattern.test(prop.name));
+          }),
         );
         rows[name] = row;
       }

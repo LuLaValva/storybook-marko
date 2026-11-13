@@ -1,0 +1,13 @@
+import type { Size } from "./size";
+
+export interface Base extends Marko.HTML.Div {
+  /** The label. */
+  label?: string;
+}
+
+export type Input = Omit<Base, `on${string}` | "role"> & {
+  /** Its size, from a type-only file. */
+  size?: Size;
+};
+
+<div/>
