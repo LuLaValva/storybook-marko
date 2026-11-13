@@ -37,7 +37,7 @@ const argTypesFromDocgen = (
   for (const { propDef } of props) {
     const { name, description, sbType, defaultValue, jsDocTags } = propDef;
     if (isChangeHandler(name)) continue;
-    const { tsType, rest, "@": attrTagProps } = docgenProps[name];
+    const { tsType, "@": attrTagProps } = docgenProps[name];
     // A Marko 5 component gets dashed attributes camelCased, so its stories
     // name args (and event handlers, eg `onSelect`) that way.
     const key = classApi
@@ -57,8 +57,6 @@ const argTypesFromDocgen = (
         jsDocTags,
         defaultValue: defaultValue ?? undefined,
       },
-      // Summarizes inherited attributes, so there is no single value to set.
-      ...(rest && { control: { disable: true } }),
       ...(attrTagProps && {
         "@": argTypesFromDocgen(attrTagProps, classApi),
       }),

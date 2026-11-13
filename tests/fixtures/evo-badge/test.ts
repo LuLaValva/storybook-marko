@@ -36,12 +36,7 @@ describe("evo-badge", () => {
       await expect(
         panel.getByText("English default to be overridden"),
       ).toBeVisible();
-      // The Marko.HTML.Span attributes are summarized by one row instead of
-      // listed individually, which `aria-busy` stands in for.
-      await expect(panel.getByText("...Marko.HTML.Span")).toBeVisible();
-      await expect(
-        panel.getByText(/attributes and event handlers of the native/),
-      ).toBeVisible();
+      // The inherited Marko.HTML.Span attributes aren't listed, eg `aria-busy`.
       await expect(panel.getByText("aria-busy")).not.toBeVisible();
 
       // The native `hidden` attribute's lib JSDoc must not leak into ours.

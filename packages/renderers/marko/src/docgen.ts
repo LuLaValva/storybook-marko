@@ -26,8 +26,6 @@ export interface DocgenProp {
   defaultValue?: { value: string };
   /** Nested members when the prop is a `Marko.AttrTag`. */
   "@"?: Record<string, DocgenProp>;
-  /** Stands in for every attribute of an inherited external type. */
-  rest?: true;
 }
 
 export interface DocgenInfo {
@@ -59,23 +57,9 @@ const nodeModulesReg = /[\\/]node_modules[\\/]/;
 // Replaces `export default` with the same length so source maps stay valid.
 const exportDefault = "export default";
 const namedDefault = "const __dg =".padEnd(exportDefault.length);
-const nativeTagReg = /^(?:global\.)?Marko\.HTML\.(\w+)$/;
-const nativeInputReg = /^(?:global\.)?Marko\.Input<\s*["'](\w+)["']\s*>$/;
-// `Pick` is left out: what it keeps can't be summarized by the type it picks
-// from, so it is described as written.
-const utilityTypeReg = /^(?:Omit|Partial|Required|Readonly)$/;
 const warned = new Set<string>();
 const docgens = new Map<string, GetDocgenInfo>();
 let toolsPromise: Promise<Tools | undefined> | undefined;
-
-/** Matches the property names an `Omit` key covers, eg `on*` (`on${string}`). */
-const keyPattern = (key: string) =>
-  new RegExp(
-    `^${key
-      .split("*")
-      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join(".*")}$`,
-  );
 
 /** Whether docs are on, so that docgen has a reader. */
 export async function isDocsEnabled(options: Options) {
@@ -376,10 +360,7 @@ function createMarkoDocgen(
       (symbol): symbol is TS.Symbol =>
         !!symbol?.declarations?.some((decl) => !extractor.isExternal(decl)),
     );
-    const props = extractor.props(
-      type,
-      declared.flatMap((symbol) => symbol.declarations!),
-    );
+    const props = extractor.props(type);
     extractor.dependencies.delete(sourceFile.fileName);
     const basename = path.basename(fileName, ".marko");
     return {
@@ -419,23 +400,16 @@ class InputExtractor {
     this.printer = ts.createPrinter({ removeComments: true });
   }
 
-  /**
-   * The props of `type`. `baseNodes` are the declarations it was written as,
-   * used to name the external types it inherits from.
-   */
-  props(
-    type: TS.Type,
-    baseNodes: readonly TS.Node[],
-  ): Record<string, DocgenProp> {
+  /** The props of `type`. */
+  props(type: TS.Type): Record<string, DocgenProp> {
     const { ts, checker } = this;
     const props: Record<string, DocgenProp> = {};
     for (const prop of checker.getPropertiesOfType(type)) {
       // Docs come only from in-project declarations, so inherited native
-      // attributes (eg `Input extends Marko.HTML.Input`) are summarized by
-      // `externalBases` rather than listed, and re-declared ones don't pick up
-      // the lib's docs unless asked to with `@inheritDoc`. A prop with no
-      // declaration (eg renamed by a mapped type's `as`) has nowhere to be
-      // documented either, so it is left to its source's summary too.
+      // attributes (eg `Input extends Marko.HTML.Input`) aren't listed, and
+      // re-declared ones don't pick up the lib's docs unless asked to with
+      // `@inheritDoc`. A prop with no declaration (eg renamed by a mapped
+      // type's `as`) has nowhere to be documented either, so it is skipped.
       const declarations = new Set(
         prop.declarations?.filter((decl) => !this.isExternal(decl)),
       );
@@ -491,8 +465,7 @@ class InputExtractor {
       let nested: Record<string, DocgenProp> | undefined;
       if (attrTagType && !this.expanding.has(attrTagType)) {
         this.expanding.add(attrTagType);
-        const argNode = declaredType && this.attrTagArgNode(declaredType);
-        nested = this.props(attrTagType, argNode ? [argNode] : []);
+        nested = this.props(attrTagType);
         this.expanding.delete(attrTagType);
       }
       props[prop.name] = {
@@ -520,7 +493,7 @@ class InputExtractor {
     // member-only props in as optional.
     if (type.isUnion()) {
       for (const member of type.types) {
-        const memberProps = this.props(member, []);
+        const memberProps = this.props(member);
         for (const name in memberProps) {
           if (!(name in props)) {
             props[name] = { ...memberProps[name], required: false };
@@ -528,7 +501,6 @@ class InputExtractor {
         }
       }
     }
-    Object.assign(props, this.externalBases(baseNodes));
     return props;
   }
 
@@ -622,24 +594,6 @@ class InputExtractor {
     );
   }
 
-  /** The written `T` of a `Marko.AttrTag<T>` annotation. */
-  private attrTagArgNode(node: TS.TypeNode): TS.TypeNode | undefined {
-    const { ts } = this;
-    if (ts.isUnionTypeNode(node)) {
-      return node.types.map((t) => this.attrTagArgNode(t)).find(Boolean);
-    }
-    if (ts.isParenthesizedTypeNode(node)) return this.attrTagArgNode(node.type);
-    const indexed = this.indexedTypeNode(node);
-    if (indexed) return this.attrTagArgNode(indexed);
-    if (!ts.isTypeReferenceNode(node)) return;
-    const decl = this.resolveDeclaration(node.typeName);
-    if (!decl || !ts.isTypeAliasDeclaration(decl)) return;
-    if (this.isExternal(decl)) {
-      return decl.name.text === "AttrTag" ? node.typeArguments?.[0] : undefined;
-    }
-    return this.attrTagArgNode(decl.type);
-  }
-
   /**
    * The annotation an in-project indexed access names, eg the declared type
    * of `seeMore` for `OtherInput["seeMore"]`.
@@ -676,167 +630,6 @@ class InputExtractor {
       this.dependencies.add(decl.getSourceFile().fileName);
     }
     return decl;
-  }
-
-  /**
-   * One `rest` row per external type the written declarations inherit from,
-   * eg `...Marko.HTML.Span` for `Input extends Omit<Marko.HTML.Span, "role">`,
-   * in place of the attributes left out of the table.
-   */
-  private externalBases(nodes: readonly TS.Node[]) {
-    const { ts, checker } = this;
-    const rows: Record<string, DocgenProp> = {};
-    // `omitted` holds the keys an enclosing `Omit<Local, ...>` removes, and
-    // `args` the type arguments a generic in-project base was given, so that
-    // eg `T` in `type Camel<T> = T & {...}` leads to `Camel<ChipInput>`'s
-    // `ChipInput` (while `T` merely used as a member type leads nowhere).
-    type Args = Map<TS.Node, { node: TS.TypeNode; args: Args }>;
-    const visit = (
-      node: TS.Node,
-      omitted: readonly string[],
-      args: Args,
-    ): void => {
-      if (ts.isInterfaceDeclaration(node)) {
-        this.dependencies.add(node.getSourceFile().fileName);
-        for (const clause of node.heritageClauses || []) {
-          for (const base of clause.types) visit(base, omitted, args);
-        }
-      } else if (ts.isTypeAliasDeclaration(node)) {
-        this.dependencies.add(node.getSourceFile().fileName);
-        visit(node.type, omitted, args);
-      } else if (ts.isIntersectionTypeNode(node) || ts.isUnionTypeNode(node)) {
-        for (const member of node.types) visit(member, omitted, args);
-      } else if (ts.isParenthesizedTypeNode(node)) {
-        visit(node.type, omitted, args);
-      } else if (
-        ts.isTypeReferenceNode(node) ||
-        ts.isExpressionWithTypeArguments(node)
-      ) {
-        const decl = this.resolveDeclaration(
-          ts.isTypeReferenceNode(node) ? node.typeName : node.expression,
-        );
-        if (decl && ts.isTypeParameterDeclaration(decl)) {
-          const arg = args.get(decl);
-          if (arg) visit(arg.node, omitted, arg.args);
-          return;
-        }
-        if (decl && !this.isExternal(decl)) {
-          if (
-            ts.isInterfaceDeclaration(decl) ||
-            ts.isTypeAliasDeclaration(decl)
-          ) {
-            visit(
-              decl,
-              omitted,
-              new Map(
-                decl.typeParameters?.flatMap((param, i) => {
-                  const arg = node.typeArguments?.[i] || param.default;
-                  return arg ? [[param, { node: arg, args }]] : [];
-                }),
-              ),
-            );
-          }
-          return;
-        }
-        const utility = this.utilityOf(node);
-        if (utility) {
-          const [arg, keys] = node.typeArguments!;
-          const argDecl =
-            ts.isTypeReferenceNode(arg) &&
-            this.resolveDeclaration(arg.typeName);
-          // See through utilities on in-project types to what they inherit.
-          if (argDecl && !this.isExternal(argDecl)) {
-            visit(
-              arg,
-              utility === "Omit" && keys
-                ? [...omitted, ...this.stringLiterals(keys)]
-                : omitted,
-              args,
-            );
-            return;
-          }
-        }
-        const type = checker.getTypeAtLocation(node);
-        const props = checker.getPropertiesOfType(type);
-        // Rows stand in for external props, which aren't listed one by one.
-        if (
-          !props.some((prop) =>
-            prop.declarations?.every((d) => this.isExternal(d)),
-          )
-        ) {
-          return;
-        }
-        const [name, row] = this.restRow(
-          node,
-          omitted.filter((key) => {
-            const pattern = keyPattern(key);
-            return props.some((prop) => pattern.test(prop.name));
-          }),
-        );
-        rows[name] = row;
-      }
-    };
-    for (const node of nodes) visit(node, [], new Map());
-    return rows;
-  }
-
-  /** The lib utility type (eg `Omit`) a reference applies, if any. */
-  private utilityOf(
-    node: TS.TypeReferenceNode | TS.ExpressionWithTypeArguments,
-  ) {
-    const name = (
-      this.ts.isTypeReferenceNode(node) ? node.typeName : node.expression
-    ).getText();
-    return node.typeArguments?.length && utilityTypeReg.test(name)
-      ? name
-      : undefined;
-  }
-
-  /** The keys an `Omit` removes, with patterns like `on${string}` as `on*`. */
-  private stringLiterals(node: TS.TypeNode): string[] {
-    const { ts, checker } = this;
-    return this.writtenMembers(node).flatMap((member) => {
-      const type = checker.getTypeAtLocation(member);
-      return (type.isUnion() ? type.types : [type]).flatMap((t) =>
-        t.isStringLiteral()
-          ? [t.value]
-          : t.flags & ts.TypeFlags.TemplateLiteral
-            ? [(t as TS.TemplateLiteralType).texts.join("*")]
-            : [],
-      );
-    });
-  }
-
-  private restRow(
-    node: TS.TypeReferenceNode | TS.ExpressionWithTypeArguments,
-    omitted: readonly string[],
-  ): [string, DocgenProp] {
-    const utility = this.utilityOf(node);
-    const [arg, keys] = node.typeArguments || [];
-    // See through the lib's utility types to the type they modify.
-    const typeName = this.textOf(utility ? arg : node);
-    const typeText = this.textOf(node);
-    const except = [
-      ...omitted,
-      ...(utility === "Omit" && keys ? this.stringLiterals(keys) : []),
-    ];
-    const nativeTag =
-      nativeTagReg.exec(typeName)?.[1].toLowerCase() ||
-      nativeInputReg.exec(typeName)?.[1];
-    const exceptText = except.length
-      ? `, except ${except.map((key) => `\`${key}\``).join(", ")}`
-      : "";
-    return [
-      `...${typeName}`,
-      {
-        description: nativeTag
-          ? `Also accepts the attributes and event handlers of the native [\`<${nativeTag}>\` tag](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/${nativeTag})${exceptText}.`
-          : `Also accepts the members of \`${typeName}\`${exceptText}.`,
-        required: false,
-        tsType: { name: typeText, raw: typeText },
-        rest: true,
-      },
-    ];
   }
 
   /**

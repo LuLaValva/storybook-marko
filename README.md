@@ -221,7 +221,7 @@ export interface Input {
 - [Attribute tags](https://markojs.com/docs/reference/language#attribute-tags) (`Marko.AttrTag`) list their own members nested beneath them, just like `"@"` argTypes.
 - A Marko 5 (class API) component is documented by the camelCased names its dashed attributes reach it as, eg `"cdn-url"` as `cdnUrl` and `"on-select"` as `onSelect`, so its stories' `argTypes` and `args` use those names too.
 - A `fooChange` handler next to `foo` (the [controllable pattern](https://markojs.com/docs/explanation/controllable-components#the-controllable-pattern)) makes `foo` controllable, as if its argType said `controllable: true`, and shares its row. To opt out, set `controllable: false` and give `fooChange` its own argType if it should still be listed.
-- Props inherited from your own types are listed like the rest. A type from outside your project (eg `Input extends Marko.HTML.Button`) is summarized by one `...Marko.HTML.Button` row instead of listing every attribute; a prop you re-declare from one keeps only your docs unless you write `/** @inheritDoc */` on it.
+- Props inherited from your own types are listed like the rest. Those from types outside your project (eg `Input extends Marko.HTML.Button`) aren't listed, and a prop you re-declare from one keeps only your docs unless you write `/** @inheritDoc */` on it. Add an argType to list one.
 
 Anything written in a story's `argTypes` wins over what is extracted, so reach for it only to change what the types can't say, such as a control's look. TypeScript is an optional peer dependency: without it, extraction is skipped.
 

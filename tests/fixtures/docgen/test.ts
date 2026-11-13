@@ -48,10 +48,9 @@ describe("docgen", () => {
     expect(props.item["@"]!.name.description).toBe("The item name.");
   });
 
-  test("lists in-project bases and summarizes external ones", async () => {
+  test("lists in-project bases but not external ones", async () => {
     const { props, dependencies } = await extract("extends.marko");
     expect(Object.keys(props).sort()).toEqual([
-      "...Marko.HTML.Span",
       "base",
       "heading",
       "hidden",
@@ -61,21 +60,7 @@ describe("docgen", () => {
     expect(props.base.description).toBe("Declared on an in-project base.");
     expect(props.shared.description).toBe("Declared in a separate file.");
     expect(dependencies).toEqual(["shared.ts"]);
-
-    expect(props["...Marko.HTML.Span"]).toMatchObject({
-      rest: true,
-      required: false,
-      tsType: {
-        name: 'Omit<Marko.HTML.Span, "role" | "aria-label" | `on${string}`>',
-      },
-    });
-    expect(props["...Marko.HTML.Span"].description).toMatch(
-      /native \[`<span>` tag\]\(.*\/span\), except `role`, `aria-label`, `on\*`\.$/,
-    );
-    expect(Object.keys(props.heading["@"]!).sort()).toEqual([
-      "...Marko.HTML.H1",
-      "text",
-    ]);
+    expect(Object.keys(props.heading["@"]!)).toEqual(["text"]);
   });
 
   test("inherits external docs only with @inheritDoc", async () => {
@@ -86,16 +71,10 @@ describe("docgen", () => {
     );
   });
 
-  test("sees through Omit of in-project types and Marko.Input", async () => {
+  test("leaves out what an Omit of an in-project type removes", async () => {
     const { props } = await extract("omit-local.marko");
     expect(props.base).toBeUndefined();
     expect(props.shared.description).toBe("Declared in a separate file.");
-    expect(props["...Marko.HTML.Span"].description).toMatch(
-      /, except `hidden`, `title`, `role`, `aria-label`, `on\*`\.$/,
-    );
-    expect(props.label["@"]!['...Marko.Input<"label">'].description).toMatch(
-      /native \[`<label>` tag\]/,
-    );
   });
 
   test("resolves in-project types, showing external names as written", async () => {
@@ -137,7 +116,7 @@ describe("docgen", () => {
     const result = await withDocgenInfo("export default {};\n", fileName);
     const info = JSON.parse(docgenReg.exec(result!.code)![1]);
     expect(info.description).toBe("Documented where it is declared.");
-    expect(Object.keys(info.props)).toEqual(["label", "...Marko.HTML.Span"]);
+    expect(Object.keys(info.props)).toEqual(["label"]);
   });
 
   test("documents a split component's Input from its browser file", async () => {
@@ -151,21 +130,6 @@ describe("docgen", () => {
       "A split component that greets someone and renders body content.",
     );
     expect(info.props.name.description).toBe("Who to greet.");
-  });
-
-  test("summarizes the bases of a union Input", async () => {
-    const { props } = await extract("mixed.marko");
-    expect(props["...Marko.HTML.Div"].rest).toBe(true);
-  });
-
-  test("describes a Pick as written", async () => {
-    const { props } = await extract("pick.marko");
-    expect(Object.keys(props)).toEqual([
-      '...Pick<Marko.HTML.Span, "title" | "id">',
-    ]);
-    expect(props['...Pick<Marko.HTML.Span, "title" | "id">'].description).toBe(
-      'Also accepts the members of `Pick<Marko.HTML.Span, "title" | "id">`.',
-    );
   });
 
   test("uses the project a solution tsconfig references", async () => {
@@ -193,27 +157,15 @@ describe("docgen", () => {
     expect(props.label.description).toContain("@param unused not a real param");
   });
 
-  test("keeps pattern keys omitted from an in-project base", async () => {
-    const { props } = await extract("omit-pattern.marko");
-    expect(props["...Marko.HTML.Div"].description).toMatch(
-      /, except `on\*`, `role`\.$/,
-    );
-  });
-
   test("watches files that only declare a prop's type", async () => {
-    const { props, dependencies } = await extract("omit-pattern.marko");
+    const { props, dependencies } = await extract("type-only.marko");
     expect(props.size.tsType.raw).toBe('"small" | "large"');
     expect(dependencies).toContain("size.ts");
   });
 
-  test("summarizes props a mapped type renames or spreads", async () => {
+  test("skips props a mapped type renames", async () => {
     const { props } = await extract("mapped.marko");
-    expect(Object.keys(props).sort()).toEqual([
-      "...Marko.HTML.Img",
-      "...Marko.HTML.Span",
-      "item",
-      "mine",
-    ]);
+    expect(Object.keys(props)).toEqual(["mine"]);
   });
 
   test("shows a re-declared native attribute as declared", async () => {
@@ -225,10 +177,7 @@ describe("docgen", () => {
 
   test("follows an attribute tag typed by indexed access", async () => {
     const { props, dependencies } = await extract("indexed.marko");
-    expect(Object.keys(props.seeMore["@"]!).sort()).toEqual([
-      "...Marko.HTML.Button",
-      "extra",
-    ]);
+    expect(Object.keys(props.seeMore["@"]!)).toEqual(["extra"]);
     expect(dependencies).toContain("indexed-types.ts");
   });
 

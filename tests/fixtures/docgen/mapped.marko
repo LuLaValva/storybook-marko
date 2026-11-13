@@ -4,19 +4,11 @@ export type Camel<T> = T & {
     : never]: T[K];
 };
 
-export interface Box<T> {
-  /** Holds a value without spreading its type. */
-  item?: T;
-}
-
 export interface Base extends Marko.HTML.Span {
   /** Declared in the project. */
   mine?: string;
 }
 
-export interface Input
-  extends Camel<Base>,
-    Camel<Omit<Marko.HTML.Img, `on${string}`>>,
-    Box<Marko.HTML.Div> {}
+export interface Input extends Camel<Base> {}
 
 <span/>
