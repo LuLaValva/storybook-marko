@@ -151,9 +151,17 @@ function getMarkoDocgen(tools: Tools, fileName: string) {
   const nearest =
     ts.findConfigFile(fileDir, ts.sys.fileExists, "tsconfig.json") ||
     ts.findConfigFile(fileDir, ts.sys.fileExists, "jsconfig.json");
-  const project = nearest
-    ? findProject(tools, nearest, fileName) || configs.get(nearest)
-    : undefined;
+  let project: ProjectConfig | undefined;
+  if (nearest) {
+    project = findProject(tools, nearest, fileName);
+    // The file may be newer than the parsed configs; re-read them once for it.
+    if (!project && !missed.has(fileName)) {
+      missed.add(fileName);
+      configs.clear();
+      project = findProject(tools, nearest, fileName);
+    }
+    project ??= configs.get(nearest);
+  }
   const key = project?.configFile || "";
   let docgen = docgens.get(key);
   if (!docgen) {
@@ -169,6 +177,8 @@ interface ProjectConfig {
   fileNames: Set<string>;
 }
 const configs = new Map<string, ProjectConfig>();
+/** Files no project included, even after re-reading the configs. */
+const missed = new Set<string>();
 
 /**
  * The project including `fileName`: `configFile`'s own, or (as tsserver
@@ -659,14 +669,12 @@ class InputExtractor {
             this.resolveDeclaration(arg.typeName);
           // See through utilities on in-project types to what they inherit.
           if (argDecl && !this.isExternal(argDecl)) {
-            if (utility !== "Pick") {
-              visit(
-                arg,
-                utility === "Omit" && keys
-                  ? [...omitted, ...this.stringLiterals(keys)]
-                  : omitted,
-              );
-            }
+            visit(
+              arg,
+              utility === "Omit" && keys
+                ? [...omitted, ...this.stringLiterals(keys)]
+                : omitted,
+            );
             return;
           }
         }

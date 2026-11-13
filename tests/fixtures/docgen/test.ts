@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { type DocgenProp, withDocgenInfo } from "@storybook/marko/docgen";
@@ -168,6 +169,21 @@ describe("docgen", () => {
   test("uses the project a solution tsconfig references", async () => {
     const { props } = await extract("solution/index.marko");
     expect(props.label.tsType.raw).toBe("string | null");
+  });
+
+  test("finds the referenced project for a component added later", async () => {
+    await extract("solution/index.marko");
+    const added = path.join(import.meta.dirname, "solution/added.marko");
+    await fs.copyFile(
+      path.join(import.meta.dirname, "solution/index.marko"),
+      added,
+    );
+    try {
+      const { props } = await extract("solution/added.marko");
+      expect(props.label.tsType.raw).toBe("string | null");
+    } finally {
+      await fs.rm(added);
+    }
   });
 
   test("keeps the parameter name of @param tags", async () => {
