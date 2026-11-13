@@ -6,7 +6,6 @@ import type {
 } from "storybook/internal/types";
 
 import { flattenAttrTags } from "./attr-tag";
-import { addControllableChangeHandlers } from "./controllable";
 import type { MarkoRenderer } from "./types";
 
 export { render, renderToCanvas } from "./render";
@@ -38,6 +37,19 @@ function addBodyContentSummary(argTypes: StrictArgTypes) {
         ...argTypes[key].table,
         type: argTypes[key].table?.type || { summary: "Marko.Body" },
       };
+    }
+  }
+  return argTypes;
+}
+
+/** Names each controllable arg's row after its `Change` handler too. */
+function addControllableChangeHandlers(argTypes: StrictArgTypes) {
+  for (const key in argTypes) {
+    const argType = argTypes[key];
+    const name = argType.name || key;
+
+    if (argType.controllable && !argTypes[key + "Change"]) {
+      argType.name = name + ", " + name + "Change";
     }
   }
   return argTypes;

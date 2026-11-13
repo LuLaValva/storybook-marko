@@ -105,7 +105,7 @@ export const render: ArgsStoryFn<MarkoRenderer> = (args, ctx) => {
   return { component, input: processInput(args, ctx, isTagsAPI(component)) };
 };
 
-function isTagsAPI(template: Marko.Template) {
+export function isTagsAPI(template: Marko.Template) {
   return !template.renderSync;
 }
 

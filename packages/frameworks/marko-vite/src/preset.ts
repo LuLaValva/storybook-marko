@@ -1,6 +1,7 @@
 import { hasVitePlugins } from "@storybook/builder-vite";
 import { isDocsEnabled, withDocgenInfo } from "@storybook/marko/docgen";
 import type { PresetProperty } from "storybook/internal/types";
+import type { Plugin } from "vite";
 
 import type { StorybookConfig } from "./types";
 
@@ -19,7 +20,7 @@ export const core: PresetProperty<"core"> = async (config, options) => {
   };
 };
 
-function markoDocgenPlugin(): import("vite").Plugin {
+function markoDocgenPlugin(): Plugin {
   return {
     name: "storybook:marko-docgen",
     enforce: "post",

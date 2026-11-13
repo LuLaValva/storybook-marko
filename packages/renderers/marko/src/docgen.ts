@@ -49,6 +49,12 @@ interface Tools {
   Project: LanguageTools["Project"];
 }
 
+interface ProjectConfig {
+  configFile: string;
+  parsed: TS.ParsedCommandLine;
+  fileNames: Set<string>;
+}
+
 const fsPathReg = /^(?:[./\\]|[A-Z]:)/i;
 const importTagReg = /^<([^>]+)>$/;
 const nodeModulesReg = /[\\/]node_modules[\\/]/;
@@ -57,6 +63,9 @@ const exportDefault = "export default";
 const namedDefault = "const __dg =".padEnd(exportDefault.length);
 const warned = new Set<string>();
 const docgens = new Map<string, GetDocgenInfo>();
+const configs = new Map<string, ProjectConfig>();
+/** Files no project included, even after re-reading the configs. */
+const missed = new Set<string>();
 let toolsPromise: Promise<Tools | undefined> | undefined;
 
 export async function isDocsEnabled(options: Options) {
@@ -75,11 +84,10 @@ export async function withDocgenInfo(
   try {
     const tools = await (toolsPromise ??= loadTools());
     const result = tools && getMarkoDocgen(tools, fileName)(fileName);
-    if (
-      !result ||
-      (!Object.keys(result.info.props).length && !result.info.description)
-    ) {
-      return;
+    if (!result) return;
+    const dependencies = [...result.dependencies];
+    if (!Object.keys(result.info.props).length && !result.info.description) {
+      return { code, dependencies };
     }
     const { ts } = tools;
     const sourceFile = ts.createSourceFile(
@@ -93,12 +101,14 @@ export async function withDocgenInfo(
           ts.isExportAssignment(statement) && !statement.isExportEquals,
       )
       ?.getStart(sourceFile);
-    if (start === undefined || !code.startsWith(exportDefault, start)) return;
+    if (start === undefined || !code.startsWith(exportDefault, start)) {
+      return { code, dependencies };
+    }
     return {
       code: `${code.slice(0, start)}${namedDefault}${code.slice(
         start + exportDefault.length,
       )}\nexport default __dg;\n__dg.__docgenInfo = ${JSON.stringify(result.info)};\n`,
-      dependencies: [...result.dependencies],
+      dependencies,
     };
   } catch (err) {
     if (!warned.has(fileName)) {
@@ -149,15 +159,6 @@ function getMarkoDocgen(tools: Tools, fileName: string) {
   }
   return docgen;
 }
-
-interface ProjectConfig {
-  configFile: string;
-  parsed: TS.ParsedCommandLine;
-  fileNames: Set<string>;
-}
-const configs = new Map<string, ProjectConfig>();
-/** Files no project included, even after re-reading the configs. */
-const missed = new Set<string>();
 
 /**
  * `configFile`'s project, or as tsserver does for a solution config (eg
@@ -742,7 +743,8 @@ class InputExtractor {
         )
         .sort((a, b) => rank(a) - rank(b));
       // `null` shows in the type but, like `undefined`, not in the control.
-      const raw = [...elements.map((element) => element.raw)]
+      const raw = elements
+        .map((element) => element.raw)
         .concat(nullable ? ["null"] : [])
         .join(" | ");
       if (elements.length === 1) return { ...elements[0], raw };

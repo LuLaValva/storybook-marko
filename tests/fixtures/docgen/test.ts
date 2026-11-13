@@ -192,6 +192,17 @@ describe("docgen", () => {
     expect(dependencies).toEqual(["base-types.ts"]);
   });
 
+  test("watches the bases of an Input with nothing to document", async () => {
+    const fileName = path.join(import.meta.dirname, "bare-base.marko");
+    const result = await withDocgenInfo("export default {};\n", fileName);
+    expect(result!.code).toBe("export default {};\n");
+    expect(
+      result!.dependencies.map((dependency) =>
+        path.relative(import.meta.dirname, dependency),
+      ),
+    ).toEqual(["base-types.ts"]);
+  });
+
   test("keeps the description of an Input with no listed props", async () => {
     const fileName = path.join(import.meta.dirname, "description-only.marko");
     const result = await withDocgenInfo("export default {};\n", fileName);

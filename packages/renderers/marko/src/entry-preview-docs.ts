@@ -15,6 +15,7 @@ import type {
 
 import { flattenAttrTags } from "./attr-tag";
 import type { DocgenProp } from "./docgen";
+import { isTagsAPI } from "./render";
 import type { MarkoStoryResult } from "./types";
 
 /** Marko's own test for an event handler attribute, eg `onClick`, `on-click`. */
@@ -67,13 +68,13 @@ const argTypesFromDocgen = (
   return argTypes;
 };
 
-const extractArgTypes = (component: unknown): StrictArgTypes | null => {
+const extractArgTypes = (component: Marko.Template): StrictArgTypes | null => {
   if (!hasDocgen<{ props: Record<string, DocgenProp> }>(component)) {
     return null;
   }
   // User argTypes are already flattened when these merge in; match them.
   const argTypes = flattenAttrTags(
-    argTypesFromDocgen(component.__docgenInfo.props, "renderSync" in component),
+    argTypesFromDocgen(component.__docgenInfo.props, !isTagsAPI(component)),
     undefined,
   )[0];
   for (const key in argTypes) {
