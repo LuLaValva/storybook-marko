@@ -667,7 +667,10 @@ class InputExtractor {
    * those names are what readers know; in-project names display resolved.
    */
   private tsTypeOf(type: TS.Type, written?: TS.TypeNode): DocgenTsType {
-    const tsType = this.convert(type);
+    const tsType = this.convert(
+      type,
+      written ? this.writtenMembers(written) : [],
+    );
     return written && this.namesOnlyExternalTypes(written)
       ? { ...tsType, raw: written.getText().replace(/\s+/g, " ") }
       : tsType;
@@ -689,7 +692,36 @@ class InputExtractor {
     return named && external;
   }
 
-  private convert(type: TS.Type): DocgenTsType {
+  /**
+   * A union's members in the order written, following in-project aliases.
+   * The checker orders them by when each type was first created anywhere in
+   * the program, which would shuffle enum options.
+   */
+  private writtenMembers(
+    node: TS.TypeNode,
+    seen = new Set<TS.Node>(),
+  ): string[] {
+    const { ts } = this;
+    if (seen.has(node)) return [];
+    seen.add(node);
+    if (ts.isUnionTypeNode(node)) {
+      return node.types.flatMap((member) => this.writtenMembers(member, seen));
+    }
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.writtenMembers(node.type, seen);
+    }
+    if (ts.isTypeReferenceNode(node)) {
+      const decl = this.resolveDeclaration(node.typeName);
+      return decl && ts.isTypeAliasDeclaration(decl) && !this.isExternal(decl)
+        ? this.writtenMembers(decl.type, seen)
+        : [];
+    }
+    return ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)
+      ? [JSON.stringify(node.literal.text)]
+      : [node.getText()];
+  }
+
+  private convert(type: TS.Type, order: readonly string[] = []): DocgenTsType {
     const { ts, checker } = this;
     // A generic `Input`'s parameters are documented by their constraints.
     if (type.isTypeParameter()) {
@@ -717,6 +749,9 @@ class InputExtractor {
           elements.push({ name: "literal", value, raw: value });
         }
       }
+      const rank = (element: DocgenTsType) =>
+        order.indexOf(element.raw) + 1 || Infinity;
+      elements.sort((a, b) => rank(a) - rank(b));
       // `null` shows in the type but, like `undefined`, not in the control.
       const raw = [...elements.map((element) => element.raw)]
         .concat(nullable ? ["null"] : [])

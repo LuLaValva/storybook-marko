@@ -1,4 +1,5 @@
 export type Size = "small" | "large";
+export type Unrelated = "none" | "reset";
 
 export interface Input<Index extends number | string = number> {
   /** Body content. */
@@ -11,6 +12,8 @@ export interface Input<Index extends number | string = number> {
   label: string | null;
   /** Typed by a parameter. */
   index?: Index;
+  /** Members in an order the checker would not keep. */
+  state?: "loading" | "expand" | "reset" | "none";
   /** Only names a type from outside the project. */
   tag?: keyof Marko.NativeTags;
 }

@@ -119,5 +119,8 @@ describe("docgen", () => {
     });
     expect(props.index.tsType.raw).toBe("string | number");
     expect(props.tag.tsType.raw).toBe("keyof Marko.NativeTags");
+    expect(props.state.tsType.raw).toBe(
+      '"loading" | "expand" | "reset" | "none"',
+    );
   });
 });
