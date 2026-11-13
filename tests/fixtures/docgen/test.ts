@@ -119,8 +119,49 @@ describe("docgen", () => {
     });
     expect(props.index.tsType.raw).toBe("string | number");
     expect(props.tag.tsType.raw).toBe("keyof Marko.NativeTags");
+    expect(props.mode.tsType.elements!.map((e) => e.name)).toEqual([
+      "true",
+      "literal",
+    ]);
+    expect(props.items.tsType.raw).toBe("{ label: string; }[]");
     expect(props.state.tsType.raw).toBe(
       '"loading" | "expand" | "reset" | "none"',
+    );
+  });
+
+  test("documents an Input naming another type from that type", async () => {
+    const fileName = path.join(import.meta.dirname, "named-input.marko");
+    const result = await withDocgenInfo("export default {};\n", fileName);
+    const info = JSON.parse(docgenReg.exec(result!.code)![1]);
+    expect(info.description).toBe("Documented where it is declared.");
+    expect(Object.keys(info.props)).toEqual(["label", "...Marko.HTML.Span"]);
+  });
+
+  test("documents a split component's Input from its browser file", async () => {
+    const fileName = path.join(
+      import.meta.dirname,
+      "../split-component/index.marko",
+    );
+    const result = await withDocgenInfo("export default {};\n", fileName);
+    const info = JSON.parse(docgenReg.exec(result!.code)![1]);
+    expect(info.description).toBe(
+      "A split component that greets someone and renders body content.",
+    );
+    expect(info.props.name.description).toBe("Who to greet.");
+  });
+
+  test("summarizes the bases of a union Input", async () => {
+    const { props } = await extract("mixed.marko");
+    expect(props["...Marko.HTML.Div"].rest).toBe(true);
+  });
+
+  test("describes a Pick as written", async () => {
+    const { props } = await extract("pick.marko");
+    expect(Object.keys(props)).toEqual([
+      '...Pick<Marko.HTML.Span, "title" | "id">',
+    ]);
+    expect(props['...Pick<Marko.HTML.Span, "title" | "id">'].description).toBe(
+      'Also accepts the members of `Pick<Marko.HTML.Span, "title" | "id">`.',
     );
   });
 });

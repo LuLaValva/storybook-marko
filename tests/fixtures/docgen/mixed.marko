@@ -12,7 +12,7 @@ export interface SingleInput {
       }>;
 }
 
-export interface RangeInput {
+export interface RangeInput extends Marko.HTML.Div {
   value?: [number, number];
   valueChange?: (value: [number, number]) => void;
 }

@@ -5,6 +5,7 @@
  */
 import path from "node:path";
 
+import type { Options } from "storybook/internal/types";
 import type TS from "typescript";
 
 type LanguageTools = typeof import("@marko/language-tools");
@@ -42,11 +43,9 @@ export interface DocgenResult {
   dependencies: string[];
 }
 
-interface MarkoDocgen {
-  getDocgenInfo(
-    fileName: string,
-  ): { info: DocgenInfo; dependencies: Set<string> } | undefined;
-}
+type GetDocgenInfo = (
+  fileName: string,
+) => { info: DocgenInfo; dependencies: Set<string> } | undefined;
 
 interface Tools {
   ts: typeof TS;
@@ -62,10 +61,19 @@ const exportDefault = "export default";
 const namedDefault = "const __dg =".padEnd(exportDefault.length);
 const nativeTagReg = /^(?:global\.)?Marko\.HTML\.(\w+)$/;
 const nativeInputReg = /^(?:global\.)?Marko\.Input<\s*["'](\w+)["']\s*>$/;
-const utilityTypeReg = /^(?:Omit|Pick|Partial|Required|Readonly)$/;
+// `Pick` is left out: what it keeps can't be summarized by the type it picks
+// from, so it is described as written.
+const utilityTypeReg = /^(?:Omit|Partial|Required|Readonly)$/;
 const warned = new Set<string>();
-const docgens = new Map<string, MarkoDocgen>();
+const docgens = new Map<string, GetDocgenInfo>();
 let toolsPromise: Promise<Tools | undefined> | undefined;
+
+/** Whether docs are on, so that docgen has a reader. */
+export async function isDocsEnabled(options: Options) {
+  return (
+    Object.keys(await options.presets.apply("docs", {}, options)).length > 0
+  );
+}
 
 /**
  * Appends a `__docgenInfo` assignment for `fileName` onto its compiled `code`,
@@ -80,8 +88,7 @@ export async function withDocgenInfo(
   if (nodeModulesReg.test(fileName)) return;
   try {
     const tools = await (toolsPromise ??= loadTools());
-    const result =
-      tools && getMarkoDocgen(tools, fileName)?.getDocgenInfo(fileName);
+    const result = tools && getMarkoDocgen(tools, fileName)(fileName);
     if (!result || !Object.keys(result.info.props).length) return;
     const { ts } = tools;
     const sourceFile = ts.createSourceFile(
@@ -150,8 +157,9 @@ function createMarkoDocgen(
   { ts, Processors, Project }: Tools,
   configFile: string | undefined,
   dir: string,
-): MarkoDocgen {
-  const host = ts.sys;
+): GetDocgenInfo {
+  // Resolve Marko's own types from the project, not wherever Storybook runs.
+  const host = { ...ts.sys, getCurrentDirectory: () => dir };
   const processors = Processors.create({ ts, host, configFile });
   const getProcessor = (fileName: string) => {
     const ext = Processors.getProcessorExtension(fileName);
@@ -277,44 +285,57 @@ function createMarkoDocgen(
     useCaseSensitiveFileNames: () => host.useCaseSensitiveFileNames,
   });
 
-  return {
-    getDocgenInfo(fileName) {
-      fileName = path.resolve(dir, fileName);
-      rootNames.add(fileName);
-      const program = service.getProgram();
-      const checker = program?.getTypeChecker();
-      const sourceFile = program?.getSourceFile(fileName);
-      const moduleSymbol =
-        sourceFile && checker?.getSymbolAtLocation(sourceFile);
-      const inputSymbol =
-        moduleSymbol &&
-        checker!
-          .getExportsOfModule(moduleSymbol)
-          .find((exportSymbol) => exportSymbol.name === "Input");
-      if (!sourceFile || !inputSymbol) return;
+  return (fileName) => {
+    rootNames.add(fileName);
+    const program = service.getProgram();
+    const sourceFile = program?.getSourceFile(fileName);
+    if (!program || !sourceFile) return;
+    const checker = program.getTypeChecker();
+    const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+    const inputSymbol =
+      moduleSymbol &&
+      checker
+        .getExportsOfModule(moduleSymbol)
+        .find((exportSymbol) => exportSymbol.name === "Input");
+    if (!inputSymbol) return;
 
-      const extractor = new InputExtractor(ts, program!, typeLibNames);
-      const props = extractor.props(
-        checker!.getDeclaredTypeOfSymbol(inputSymbol),
-        sourceFile,
-        inputSymbol.declarations || [],
-      );
-      extractor.dependencies.delete(fileName);
-      const basename = path.basename(fileName, ".marko");
-      return {
-        info: {
-          displayName:
-            basename === "index"
-              ? path.basename(path.dirname(fileName))
-              : basename,
-          description: ts.displayPartsToString(
-            inputSymbol.getDocumentationComment(checker!),
-          ),
-          props,
-        },
-        dependencies: extractor.dependencies,
-      };
-    },
+    const type = checker.getDeclaredTypeOfSymbol(inputSymbol);
+    const extractor = new InputExtractor(
+      ts,
+      program,
+      new Set(
+        [...typeLibNames].flatMap((name) => program.getSourceFile(name) || []),
+      ),
+    );
+    // `Input` may just name another in-project type, eg a split component's
+    // `Component["input"]`, whose declaration then holds the docs.
+    const declared = [inputSymbol, type.aliasSymbol, type.getSymbol()].filter(
+      (symbol): symbol is TS.Symbol =>
+        !!symbol?.declarations?.some((decl) => !extractor.isExternal(decl)),
+    );
+    const props = extractor.props(
+      type,
+      sourceFile,
+      declared.flatMap((symbol) => symbol.declarations!),
+    );
+    extractor.dependencies.delete(sourceFile.fileName);
+    const basename = path.basename(fileName, ".marko");
+    return {
+      info: {
+        displayName:
+          basename === "index"
+            ? path.basename(path.dirname(fileName))
+            : basename,
+        description:
+          declared
+            .map((symbol) =>
+              ts.displayPartsToString(symbol.getDocumentationComment(checker)),
+            )
+            .find(Boolean) || "",
+        props,
+      },
+      dependencies: extractor.dependencies,
+    };
   };
 }
 
@@ -328,7 +349,8 @@ class InputExtractor {
   constructor(
     private readonly ts: typeof TS,
     private readonly program: TS.Program,
-    private readonly typeLibNames: Set<string>,
+    /** Marko's own type libraries. */
+    private readonly typeLibFiles: Set<TS.SourceFile>,
   ) {
     this.checker = program.getTypeChecker();
   }
@@ -364,7 +386,7 @@ class InputExtractor {
           const name = tag.tagName.text;
           const text = ts.getTextOfJSDocComment(tag.comment) ?? "";
           if (name === "default" || name === "defaultValue") {
-            defaultValue = { value: text };
+            if (text) defaultValue = { value: text };
           } else if (name.toLowerCase() === "inheritdoc") {
             inheritDoc = true;
           } else {
@@ -428,12 +450,12 @@ class InputExtractor {
     return props;
   }
 
-  private isExternal(node: TS.Node) {
+  isExternal(node: TS.Node) {
     const sourceFile = node.getSourceFile();
     return (
       this.program.isSourceFileDefaultLibrary(sourceFile) ||
       this.program.isSourceFileFromExternalLibrary(sourceFile) ||
-      this.typeLibNames.has(sourceFile.fileName)
+      this.typeLibFiles.has(sourceFile)
     );
   }
 
@@ -544,7 +566,7 @@ class InputExtractor {
       } else if (ts.isTypeAliasDeclaration(node)) {
         this.dependencies.add(node.getSourceFile().fileName);
         visit(node.type, omitted);
-      } else if (ts.isIntersectionTypeNode(node)) {
+      } else if (ts.isIntersectionTypeNode(node) || ts.isUnionTypeNode(node)) {
         for (const member of node.types) visit(member, omitted);
       } else if (ts.isParenthesizedTypeNode(node)) {
         visit(node.type, omitted);
@@ -685,6 +707,9 @@ class InputExtractor {
         const decl = this.resolveDeclaration(child.typeName);
         named = true;
         external &&= !!decl && this.isExternal(decl);
+      } else if (ts.isTypeLiteralNode(child)) {
+        // An inline type is ours, and as written would include its JSDoc.
+        external = false;
       }
       ts.forEachChild(child, visit);
     };
@@ -741,12 +766,13 @@ class InputExtractor {
           elements.push(this.convert(member));
         }
       }
-      // The checker expands `boolean` to `true | false`; fold it back.
+      // The checker expands `boolean` to `true | false`; fold it back. A lone
+      // `true` or `false` isn't a "literal": as an option it'd be a string.
       if (boolLiterals.length === 2) {
         elements.push({ name: "boolean", raw: "boolean" });
       } else {
         for (const value of boolLiterals) {
-          elements.push({ name: "literal", value, raw: value });
+          elements.push({ name: value, raw: value });
         }
       }
       const rank = (element: DocgenTsType) =>
@@ -764,7 +790,11 @@ class InputExtractor {
       return { name: "union", raw, elements };
     }
     const raw = checker.typeToString(type);
-    if (type.isStringLiteral() || type.isNumberLiteral()) {
+    // An enum member (eg `Color.Red`) isn't a literal option either.
+    if (
+      (type.isStringLiteral() || type.isNumberLiteral()) &&
+      !(type.flags & ts.TypeFlags.EnumLiteral)
+    ) {
       return { name: "literal", value: raw, raw };
     }
     if (type.getCallSignatures().length) {

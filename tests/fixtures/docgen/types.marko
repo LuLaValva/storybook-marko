@@ -14,6 +14,13 @@ export interface Input<Index extends number | string = number> {
   index?: Index;
   /** Members in an order the checker would not keep. */
   state?: "loading" | "expand" | "reset" | "none";
+  /** A lone boolean literal among strings. */
+  mode?: true | "auto";
+  /** An inline type, whose member docs stay out of the displayed type. */
+  items?: Array<{
+    /** The label. */
+    label: string;
+  }>;
   /** Only names a type from outside the project. */
   tag?: keyof Marko.NativeTags;
 }

@@ -1,4 +1,5 @@
 import { hasVitePlugins } from "@storybook/builder-vite";
+import { isDocsEnabled, withDocgenInfo } from "@storybook/marko/docgen";
 import type { PresetProperty } from "storybook/internal/types";
 
 import type { StorybookConfig } from "./types";
@@ -26,7 +27,6 @@ function markoDocgenPlugin(): import("vite").Plugin {
       // `__docgenInfo` is only read in the browser, from the component itself
       // rather than the `?query` variants @marko/vite also serves.
       if (options?.ssr || !id.endsWith(".marko")) return;
-      const { withDocgenInfo } = await import("@storybook/marko/docgen");
       const result = await withDocgenInfo(code, id);
       if (!result) return;
       for (const dependency of result.dependencies) {
@@ -62,7 +62,7 @@ export const viteFinal: StorybookConfig["viteFinal"] = async (
       ...((await hasVitePlugins(viteConfig.plugins || [], ["marko-vite:pre"]))
         ? []
         : [(await import("@marko/vite")).default({ linked: false })]),
-      markoDocgenPlugin(),
+      ...((await isDocsEnabled(storybookConfig)) ? [markoDocgenPlugin()] : []),
     ],
   });
 };
