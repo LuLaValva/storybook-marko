@@ -407,9 +407,9 @@ class InputExtractor {
     for (const prop of checker.getPropertiesOfType(type)) {
       // Docs come only from in-project declarations, so inherited native
       // attributes (eg `Input extends Marko.HTML.Input`) aren't listed, and
-      // re-declared ones don't pick up the lib's docs unless asked to with
-      // `@inheritDoc`. A prop with no declaration (eg renamed by a mapped
-      // type's `as`) has nowhere to be documented either, so it is skipped.
+      // re-declared ones don't pick up the lib's docs. A prop with no
+      // declaration (eg renamed by a mapped type's `as`) has nowhere to be
+      // documented either, so it is skipped.
       const declarations = new Set(
         prop.declarations?.filter((decl) => !this.isExternal(decl)),
       );
@@ -423,7 +423,6 @@ class InputExtractor {
 
       const descriptions = new Set<string>();
       let defaultValue: { value: string } | undefined;
-      let inheritDoc = false;
       for (const decl of declarations) {
         this.dependencies.add(decl.getSourceFile().fileName);
         for (const text of this.jsDocComments(decl)) descriptions.add(text);
@@ -437,18 +436,10 @@ class InputExtractor {
             .join(" ");
           if (name === "default" || name === "defaultValue") {
             if (text) defaultValue = { value: text };
-          } else if (name.toLowerCase() === "inheritdoc") {
-            inheritDoc = true;
           } else {
             // docs-tools parses remaining tags (eg @deprecated) back out.
             descriptions.add(`@${name}${text ? ` ${text}` : ""}`);
           }
-        }
-      }
-      if (inheritDoc) {
-        for (const decl of this.inheritedDeclarations(type, prop.name)) {
-          if (declarations.has(decl)) continue;
-          for (const text of this.jsDocComments(decl)) descriptions.add(text);
         }
       }
 
@@ -542,20 +533,6 @@ class InputExtractor {
       if (text) texts.push(text);
     }
     return texts;
-  }
-
-  /** The declarations a re-declared prop overrides, for `@inheritDoc`. */
-  private inheritedDeclarations(type: TS.Type, name: string) {
-    const { ts, checker } = this;
-    const bases = type.isIntersection()
-      ? type.types
-      : type.flags & ts.TypeFlags.Object &&
-          (type as TS.ObjectType).objectFlags & ts.ObjectFlags.ClassOrInterface
-        ? checker.getBaseTypes(type as TS.InterfaceType)
-        : [];
-    return bases.flatMap(
-      (base) => checker.getPropertyOfType(base, name)?.declarations || [],
-    );
   }
 
   /**

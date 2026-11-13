@@ -6,7 +6,6 @@ export interface Base extends Omit<Marko.HTML.Span, "role" | "aria-label" | `on$
 }
 
 export interface Input extends Base, Shared {
-  /** @inheritDoc */
   hidden?: boolean;
   /** Overrides the native title without inheriting its docs. */
   title?: string;

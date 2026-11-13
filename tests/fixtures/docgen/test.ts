@@ -63,9 +63,8 @@ describe("docgen", () => {
     expect(Object.keys(props.heading["@"]!)).toEqual(["text"]);
   });
 
-  test("inherits external docs only with @inheritDoc", async () => {
+  test("keeps only in-project docs for a re-declared native prop", async () => {
     const { props } = await extract("extends.marko");
-    expect(props.hidden.description).toMatch(/hidden from rendering/);
     expect(props.title.description).toBe(
       "Overrides the native title without inheriting its docs.",
     );

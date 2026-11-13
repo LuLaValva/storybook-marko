@@ -14,9 +14,10 @@ import type {
 } from "storybook/internal/types";
 
 import { flattenAttrTags } from "./attr-tag";
-import { addControllableChangeHandlers } from "./controllable";
 import type { DocgenProp } from "./docgen";
 import type { MarkoStoryResult } from "./types";
+
+const handlerReg = /^on[A-Z]/;
 
 export const decorators: Addon_DecoratorFunction<MarkoStoryResult>[] = [];
 
@@ -74,9 +75,18 @@ const extractArgTypes = (component: unknown): StrictArgTypes | null => {
     argTypesFromDocgen(component.__docgenInfo.props, "renderSync" in component),
     undefined,
   )[0];
-  // Only a story's own `"@"` argTypes also flatten its args (which custom
-  // renders may not expect); docgen's just document the attributes.
-  for (const key in argTypes) delete argTypes[key]["@"];
+  for (const key in argTypes) {
+    // Only a story's own `"@"` argTypes also flatten its args (which custom
+    // renders may not expect); docgen's just document the attributes.
+    delete argTypes[key]["@"];
+    // Event handlers log to the Actions panel and are grouped in the table.
+    // Attr tags' (keyed `@tag > onFoo`) are left out, as their args would
+    // create the tag.
+    if (handlerReg.test(key) && argTypes[key].type?.name === "function") {
+      argTypes[key].action = key;
+      argTypes[key].table = { ...argTypes[key].table, category: "Events" };
+    }
+  }
   return argTypes;
 };
 
@@ -92,10 +102,6 @@ export const parameters = {
   },
 };
 
-export const argTypesEnhancers: ArgTypesEnhancer[] = [
-  enhanceArgTypes,
-  // Docgen can mark args controllable after entry-preview named their rows.
-  ({ argTypes }) => addControllableChangeHandlers(argTypes),
-];
+export const argTypesEnhancers: ArgTypesEnhancer[] = [enhanceArgTypes];
 
 export { applyDecorators } from "./decorators";

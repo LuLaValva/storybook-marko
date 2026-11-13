@@ -14,9 +14,6 @@ export default {
     },
   },
   argTypes: {
-    onIncrement: {
-      table: { category: "Events" },
-    },
     count: {
       // Deliberately differs from the Input JSDoc: explicit argTypes win.
       description: "What the initial count of the counter should be",
@@ -55,3 +52,6 @@ export const InitialCount = {
     },
   },
 } as Story<Input>;
+
+/** Leaves `onIncrement` to docgen, which makes it an action. */
+export const AutomaticAction = {} as Story<Input>;

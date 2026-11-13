@@ -43,11 +43,16 @@ function addBodyContentSummary(argTypes: StrictArgTypes) {
   return argTypes;
 }
 
+const nameControllableRows: ArgTypesEnhancer<MarkoRenderer> = ({ argTypes }) =>
+  addControllableChangeHandlers(argTypes);
+// Runs after the first pass, which includes docs marking args controllable.
+nameControllableRows.secondPass = true;
+
 export const argTypesEnhancers: ArgTypesEnhancer<MarkoRenderer>[] = [
   ({ argTypes, initialArgs }) => flattenAttrTags(argTypes, initialArgs)[0],
-  ({ argTypes }) => addControllableChangeHandlers(argTypes),
   ({ argTypes }) => addBodyContentSummary(argTypes),
   ({ argTypes, id, title }) => normalizeArgTypes(argTypes, id, title),
+  nameControllableRows,
 ];
 
 export const argsEnhancers: ArgsEnhancer<MarkoRenderer>[] = [

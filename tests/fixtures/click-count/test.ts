@@ -5,7 +5,7 @@ import { expect } from "playwright/test";
 import { testPage } from "../../test-page";
 import * as stories from "./stories";
 
-const { Default, InitialCount } = composeStories(stories);
+const { Default, InitialCount, AutomaticAction } = composeStories(stories);
 const initialTimeout = { timeout: 60000 };
 
 describe("click-count", () => {
@@ -114,6 +114,25 @@ describe("click-count", () => {
         await render(InitialCount);
         expect(screen.getByText("Current Count: 2")).toBeTruthy();
         expect(InitialCount.args.count).toBe(2);
+      });
+    });
+  });
+
+  describe(AutomaticAction.storyName, () => {
+    testPage((getPage) => {
+      test("logs a handler without an argType for it", async () => {
+        const page = await getPage();
+        const frame = page.frameLocator("#storybook-preview-iframe");
+        await page.goto(`/?path=/story/${AutomaticAction.id}`);
+        await frame.getByText("Click me!").click(initialTimeout);
+        await page.getByRole("tab", { name: /Actions \d+/ }).click();
+        await expect(
+          page.getByRole("treeitem", { name: "onIncrement: 1" }),
+        ).toBeVisible();
+
+        await page.getByText("Controls", { exact: true }).click();
+        const panel = page.locator("#storybook-panel-root");
+        await expect(panel.getByText(/^events$/i)).toBeVisible();
       });
     });
   });
